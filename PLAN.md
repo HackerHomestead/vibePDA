@@ -61,29 +61,21 @@ Future: reminders, journal entries, recurring events.
 
 ```
 vibe/
-├── cmd/
-│   └── vibe/
-│       └── main.go              # Entry point
+├── cmd/vibe/main.go             # Entry point, opens DB, creates repo
 ├── internal/
 │   ├── app/
-│   │   └── app.go               # Bubble Tea model, message types
-│   ├── ui/
-│   │   ├── views/               # Main views (notes, tasks, contacts, calendar)
-│   │   │   ├── notes.go
-│   │   │   ├── tasks.go
-│   │   │   ├── contacts.go
-│   │   │   └── calendar.go
-│   │   ├── styles.go            # Lipgloss style definitions
-│   │   └── components/          # Shared UI components
+│   │   └── app.go               # Bubble Tea model, sidebar, calendar integration
+│   ├── calendar/
+│   │   └── model.go             # Calendar view: month grid, event list, add/delete
+│   ├── config/
+│   │   └── config.go            # JSON config loader
 │   ├── db/
-│   │   ├── db.go                # SQLite connection, migrations
-│   │   ├── notes.go
-│   │   ├── tasks.go
-│   │   ├── contacts.go
-│   │   └── calendar.go
-│   └── config/
-│       └── config.go            # Load/save JSON config
-├── config.go                    # Config struct
+│   │   ├── db.go                # SQLite connection, schema migrations
+│   │   └── calendar.go          # CalendarRepo CRUD
+│   └── ui/
+│       ├── styles.go            # Lipgloss style definitions
+│       └── views/               # Placeholder views (notes, tasks, contacts)
+│           └── views.go
 ├── go.mod
 ├── go.sum
 ├── PLAN.md
@@ -105,7 +97,7 @@ vibe/
 }
 ```
 
-- `database_path`: SQLite file; `~` expands to home dir
+- `database_path`: SQLite file; `~` expands to home dir (default: `~/.local/share/vibe/vibe.db`)
 - `editor`: Optional external editor for long notes (vim, nano, etc.)
 - `theme`: Reserved for future themes
 - `default_view`: Which module to show on startup (`notes`, `tasks`, `contacts`, or `calendar`)
@@ -240,10 +232,10 @@ Optional: install to `~/bin` or `/usr/local/bin`.
 
 ## Suggested Phases
 
-1. **Phase 1**: Project scaffolding, config loading, DB init with migrations.
-2. **Phase 2**: Bubble Tea skeleton, main menu, single view (e.g. Tasks).
-3. **Phase 3**: CRUD for Tasks, Notes, Contacts, and Calendar.
-4. **Phase 4**: Polish: keybindings, help text, error handling.
+1. **Phase 1**: Project scaffolding, config loading, DB init with migrations. ✅
+2. **Phase 2**: Bubble Tea skeleton, main menu, single view (e.g. Tasks). ✅
+3. **Phase 3**: CRUD for Tasks, Notes, Contacts, and Calendar. (Calendar ✅; Notes, Tasks, Contacts pending)
+4. **Phase 4**: Polish: keybindings, help text, error handling. (partial)
 5. **Phase 5**: Optional: external editor, themes, backup/export.
 
 ---

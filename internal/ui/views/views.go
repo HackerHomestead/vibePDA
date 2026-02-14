@@ -42,14 +42,11 @@ func ContactsView() string {
 `)
 }
 
-// CalendarView returns placeholder content for Calendar module.
+// CalendarView returns placeholder content (unused when calendar model is active).
 func CalendarView() string {
 	return PlaceholderStyle.Render(`
   Calendar
   ────────────────────────────────────────────────────────────
   Events and appointments.
-
-  No events yet. Press 'n' to add an event (coming soon).
-  Use ←/→ to change month (coming soon).
 `)
 }

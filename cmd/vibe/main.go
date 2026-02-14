@@ -30,7 +30,8 @@ func main() {
 	defer database.Close()
 
 	calendarRepo := db.NewCalendarRepo(database)
-	m := app.New(cfg.DefaultView, calendarRepo)
+	tasksRepo := db.NewTasksRepo(database)
+	m := app.New(cfg.DefaultView, calendarRepo, tasksRepo)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {

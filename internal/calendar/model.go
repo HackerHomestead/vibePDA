@@ -3,10 +3,14 @@ package calendar
 import (
 	"fmt"
 	"io"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/you/vibe/internal/db"
@@ -67,19 +71,29 @@ var (
 			Padding(0, 1)
 )
 
+// Form steps: 0=title, 1=start, 2=end, 3=notes
+const formSteps = 4
+
 // Model is the calendar view model.
 type Model struct {
-	repo       *db.CalendarRepo
-	year       int
-	month      time.Month
-	day        int // 0 = no day selected
-	events     []db.Event
-	eventList  list.Model
-	width      int
-	height     int
-	err        string
-	showForm   bool   // true when adding/editing
-	formTitle  string // for new event
+	repo         *db.CalendarRepo
+	year         int
+	month        time.Month
+	day          int // 0 = no day selected
+	events       []db.Event
+	eventList    list.Model
+	width        int
+	height       int
+	err          string
+	showForm     bool
+	formStep     int    // 0=title, 1=start, 2=end, 3=notes
+	formTitle    string
+	formStart    string // HH:MM
+	formEnd      string // HH:MM
+	formNotes    string // multiline description
+	formEditID   int64  // 0=new, else edit
+	formInput    textinput.Model
+	formTextarea textarea.Model
 }
 
 // NewModel creates a new calendar model.
@@ -93,15 +107,26 @@ func NewModel(repo *db.CalendarRepo, width, height int) Model {
 	l.SetShowHelp(false)
 	l.DisableQuitKeybindings()
 
+	ti := textinput.New()
+	ti.Placeholder = "Meeting with team"
+	ti.Width = 40
+
+	ta := textarea.New()
+	ta.Placeholder = "Notes (optional)"
+	ta.SetWidth(50)
+	ta.SetHeight(4)
+
 	now := time.Now()
 	m := Model{
-		repo:      repo,
-		year:      now.Year(),
-		month:     now.Month(),
-		day:       now.Day(),
-		eventList: l,
-		width:     width,
-		height:    height,
+		repo:         repo,
+		year:         now.Year(),
+		month:        now.Month(),
+		day:          now.Day(),
+		eventList:    l,
+		formInput:    ti,
+		formTextarea: ta,
+		width:        width,
+		height:       height,
 	}
 	return m
 }
@@ -152,9 +177,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.refreshEventList()
 			return m, m.loadEvents
 		case "n":
-			m.showForm = true
-			m.formTitle = ""
-			return m, nil
+			m.openForm(nil)
+			return m, textinput.Blink
 		case "d":
 			return m.handleDelete()
 		case "j", "down":
@@ -166,7 +190,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.eventList, cmd = m.eventList.Update(msg)
 			return m, cmd
 		case "enter":
-			// Could open edit form - skip for now
+			// Open edit form for selected event
+			item := m.eventList.SelectedItem()
+			if ei, ok := item.(eventItem); ok {
+				m.openForm(ei.event)
+				return m, textinput.Blink
+			}
 			return m, nil
 		}
 	case tea.WindowSizeMsg:
@@ -181,46 +210,204 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m *Model) openForm(e *db.Event) {
+	m.showForm = true
+	m.formEditID = 0
+	m.formStep = 0
+	m.formNotes = ""
+	if e != nil {
+		m.formEditID = e.ID
+		m.formTitle = e.Title
+		m.formStart = e.StartAt.Format("15:04")
+		m.formEnd = e.EndAt.Format("15:04")
+		m.formNotes = e.Description
+		m.year = e.StartAt.Year()
+		m.month = e.StartAt.Month()
+		m.day = e.StartAt.Day()
+	} else {
+		m.formTitle = ""
+		m.formStart = "09:00"
+		m.formEnd = "10:00"
+		if m.day == 0 {
+			now := time.Now()
+			m.year = now.Year()
+			m.month = now.Month()
+			m.day = now.Day()
+		}
+	}
+	m.formInput.SetValue(m.formTitle)
+	m.formInput.Placeholder = "Meeting with team"
+	m.formInput.Focus()
+	m.formTextarea.SetValue(m.formNotes)
+	m.formTextarea.Blur()
+}
+
 func (m Model) handleFormKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	// Tab / Shift+Tab cycle through fields
 	switch msg.String() {
-	case "esc", "ctrl+c":
+	case "tab":
+		return m.formTabForward()
+	case "shift+tab":
+		return m.formTabBack()
+	case "esc":
 		m.showForm = false
+		m.formInput.Blur()
+		m.formTextarea.Blur()
 		return m, nil
 	case "enter":
-		if strings.TrimSpace(m.formTitle) != "" {
-			e := &db.Event{
-				Title:   strings.TrimSpace(m.formTitle),
-				StartAt: time.Date(m.year, m.month, m.day, 9, 0, 0, 0, time.Local),
-				EndAt:   time.Date(m.year, m.month, m.day, 10, 0, 0, 0, time.Local),
-				AllDay:  false,
-			}
-			if m.day == 0 {
-				now := time.Now()
-				e.StartAt = time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, time.Local)
-				e.EndAt = e.StartAt.Add(time.Hour)
-			}
-			if err := m.repo.Create(e); err != nil {
-				m.err = err.Error()
-			} else {
-				m.showForm = false
-				m.err = ""
-			}
-			m.refreshEventList()
-			return m, m.loadEvents
+		// Enter: advance or save. On notes field, pass to textarea for newline.
+		if m.formStep == 3 {
+			// Notes: let textarea handle Enter (newline)
+			break
 		}
-		return m, nil
-	default:
-		// Append printable runes
-		if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
-			m.formTitle += string(msg.Runes)
-			return m, nil
+		if m.formStep == formSteps-1 {
+			return m.formSave()
 		}
-		if msg.String() == "backspace" && len(m.formTitle) > 0 {
-			m.formTitle = m.formTitle[:len(m.formTitle)-1]
-			return m, nil
-		}
+		return m.formAdvance()
+	}
+
+	// Route input to focused field
+	if m.formStep == 3 {
+		var cmd tea.Cmd
+		m.formTextarea, cmd = m.formTextarea.Update(msg)
+		return m, cmd
+	}
+	var cmd tea.Cmd
+	m.formInput, cmd = m.formInput.Update(msg)
+	return m, cmd
+}
+
+func (m Model) formTabForward() (Model, tea.Cmd) {
+	if m.formStep == formSteps-1 {
+		return m.formSave()
+	}
+	return m.formAdvance()
+}
+
+func (m Model) formTabBack() (Model, tea.Cmd) {
+	if m.formStep == 0 {
+		m.showForm = false
+		m.formInput.Blur()
+		m.formTextarea.Blur()
 		return m, nil
 	}
+	m.formStep--
+	m.focusFormField()
+	return m, nil
+}
+
+func (m Model) formAdvance() (Model, tea.Cmd) {
+	val := strings.TrimSpace(m.formInput.Value())
+	switch m.formStep {
+	case 0:
+		if val != "" {
+			m.formTitle = val
+			m.formStep = 1
+			m.formInput.SetValue(m.formStart)
+			m.formInput.Placeholder = "09:00"
+			return m, nil
+		}
+	case 1:
+		if _, ok := parseTime(val); ok {
+			m.formStart = val
+			m.formStep = 2
+			m.formInput.SetValue(m.formEnd)
+			m.formInput.Placeholder = "10:00"
+			return m, nil
+		}
+		m.err = "Invalid time (use HH:MM)"
+	case 2:
+		if _, ok := parseTime(val); ok {
+			m.formEnd = val
+			m.formStep = 3
+			m.formTextarea.SetValue(m.formNotes)
+			m.formTextarea.Focus()
+			m.formInput.Blur()
+			return m, textarea.Blink
+		}
+		m.err = "Invalid time (use HH:MM)"
+	}
+	return m, nil
+}
+
+func (m *Model) focusFormField() {
+	m.formInput.Blur()
+	m.formTextarea.Blur()
+	switch m.formStep {
+	case 0:
+		m.formInput.SetValue(m.formTitle)
+		m.formInput.Placeholder = "Meeting with team"
+		m.formInput.Focus()
+	case 1:
+		m.formInput.SetValue(m.formStart)
+		m.formInput.Placeholder = "09:00"
+		m.formInput.Focus()
+	case 2:
+		m.formInput.SetValue(m.formEnd)
+		m.formInput.Placeholder = "10:00"
+		m.formInput.Focus()
+	case 3:
+		m.formTextarea.SetValue(m.formNotes)
+		m.formTextarea.Focus()
+	}
+}
+
+func (m Model) formSave() (Model, tea.Cmd) {
+	m.formNotes = strings.TrimSpace(m.formTextarea.Value())
+	startT, ok1 := parseTime(strings.TrimSpace(m.formStart))
+	endT, ok2 := parseTime(strings.TrimSpace(m.formEnd))
+	if !ok1 || !ok2 {
+		m.err = "Invalid time (use HH:MM)"
+		return m, nil
+	}
+	yr, mon, d := m.year, m.month, m.day
+	e := &db.Event{
+		Title:       m.formTitle,
+		Description: m.formNotes,
+		StartAt:     time.Date(yr, mon, d, startT/100, startT%100, 0, 0, time.Local),
+		EndAt:       time.Date(yr, mon, d, endT/100, endT%100, 0, 0, time.Local),
+		AllDay:      false,
+	}
+	if m.formEditID != 0 {
+		e.ID = m.formEditID
+		if err := m.repo.Update(e); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+	} else {
+		if err := m.repo.Create(e); err != nil {
+			m.err = err.Error()
+			return m, nil
+		}
+	}
+	m.showForm = false
+	m.formInput.Blur()
+	m.formTextarea.Blur()
+	m.err = ""
+	m.refreshEventList()
+	return m, m.loadEvents
+}
+
+// parseTime parses HH:MM or HHMM, returns hour*100+min and ok.
+func parseTime(s string) (int, bool) {
+	// Try HH:MM
+	re := regexp.MustCompile(`^(\d{1,2}):(\d{2})$`)
+	if m := re.FindStringSubmatch(s); len(m) == 3 {
+		h, _ := strconv.Atoi(m[1])
+		min, _ := strconv.Atoi(m[2])
+		if h >= 0 && h <= 23 && min >= 0 && min <= 59 {
+			return h*100 + min, true
+		}
+	}
+	// Try HHMM
+	if len(s) == 4 {
+		h, eh := strconv.Atoi(s[:2])
+		min, em := strconv.Atoi(s[2:])
+		if eh == nil && em == nil && h >= 0 && h <= 23 && min >= 0 && min <= 59 {
+			return h*100 + min, true
+		}
+	}
+	return 0, false
 }
 
 func (m Model) handleDelete() (Model, tea.Cmd) {
@@ -291,9 +478,40 @@ func (m Model) View() string {
 	}
 
 	if m.showForm {
-		b.WriteString(titleStyle.Render(" New Event ") + "\n")
-		b.WriteString("Title: " + m.formTitle + "▌\n")
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("Enter: save  Esc: cancel"))
+		formTitle := " New Event "
+		if m.formEditID != 0 {
+			formTitle = " Edit Event "
+		}
+		b.WriteString(titleStyle.Render(formTitle) + "\n\n")
+		b.WriteString("Title: ")
+		if m.formStep == 0 {
+			b.WriteString(m.formInput.View() + "\n")
+		} else {
+			b.WriteString(m.formTitle + "\n")
+		}
+		b.WriteString("Start (HH:MM): ")
+		if m.formStep == 1 {
+			b.WriteString(m.formInput.View() + "\n")
+		} else {
+			b.WriteString(m.formStart + "\n")
+		}
+		b.WriteString("End (HH:MM): ")
+		if m.formStep == 2 {
+			b.WriteString(m.formInput.View() + "\n")
+		} else {
+			b.WriteString(m.formEnd + "\n")
+		}
+		b.WriteString("Notes:\n")
+		if m.formStep == 3 {
+			b.WriteString(m.formTextarea.View() + "\n")
+		} else {
+			b.WriteString(m.formNotes)
+			if m.formNotes == "" {
+				b.WriteString("(empty)")
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("Tab/Enter: next  Shift+Tab: back  Esc: cancel"))
 		return b.String()
 	}
 

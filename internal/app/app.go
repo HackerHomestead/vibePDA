@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/you/vibe/internal/calendar"
 	"github.com/you/vibe/internal/db"
+	"github.com/you/vibe/internal/tasks"
 	"github.com/you/vibe/internal/ui/views"
 )
 
@@ -88,17 +89,29 @@ var (
 			Padding(0, 1)
 )
 
+// BuildNumber is set at build time via -ldflags "-X github.com/you/vibe/internal/app.BuildNumber=$(date +%s)"
+var BuildNumber string
+
+// Focus pane: sidebar or main content
+const (
+	FocusSidebar = iota
+	FocusMain
+)
+
 // Model is the Bubble Tea application model (Outlook-inspired layout).
 type Model struct {
 	sidebar      list.Model
 	calendar     calendar.Model
+	tasks        tasks.Model
+	focusPane    int // FocusSidebar or FocusMain
 	calendarRepo *db.CalendarRepo
-	width         int
-	height        int
+	tasksRepo    *db.TasksRepo
+	width        int
+	height       int
 }
 
 // New creates a new application model.
-func New(defaultView string, calendarRepo *db.CalendarRepo) Model {
+func New(defaultView string, calendarRepo *db.CalendarRepo, tasksRepo *db.TasksRepo) Model {
 	items := []list.Item{
 		moduleItem{title: "Notes", id: ModuleNotes},
 		moduleItem{title: "Tasks", id: ModuleTasks},
@@ -119,11 +132,15 @@ func New(defaultView string, calendarRepo *db.CalendarRepo) Model {
 
 	mainW, mainH := 60, 20
 	cal := calendar.NewModel(calendarRepo, mainW, mainH)
+	tsk := tasks.NewModel(tasksRepo, mainW, mainH)
 
 	return Model{
 		sidebar:      l,
 		calendar:     cal,
+		tasks:        tsk,
+		focusPane:    FocusSidebar,
 		calendarRepo: calendarRepo,
+		tasksRepo:    tasksRepo,
 		width:        80,
 		height:       24,
 	}
@@ -146,9 +163,12 @@ func indexForView(name string) int {
 
 // Init runs on program start.
 func (m Model) Init() tea.Cmd {
-	// Load calendar events when Calendar is the selected module
-	if m.sidebar.Index() == ModuleCalendar {
+	idx := m.sidebar.Index()
+	if idx == ModuleCalendar {
 		return m.calendar.Init()
+	}
+	if idx == ModuleTasks {
+		return m.tasks.Init()
 	}
 	return nil
 }
@@ -160,6 +180,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
+		case "tab":
+			m.focusPane = FocusMain
+			return m, nil
+		case "shift+tab":
+			m.focusPane = FocusSidebar
+			return m, nil
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -168,40 +194,45 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		mainW := m.width - sidebarWidth - 10
 		mainH := m.height - 6
 		m.calendar.SetSize(mainW, mainH)
+		m.tasks.SetSize(mainW, mainH)
 		return m, nil
 	}
 
-	// When Calendar is selected, pass calendar-specific keys to calendar model
-	if m.sidebar.Index() == ModuleCalendar {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			calKeys := map[string]bool{
-				"h": true, "l": true, "left": true, "right": true,
-				"t": true, "n": true, "d": true,
-				"j": true, "k": true,
-				"enter": true, "esc": true, "backspace": true,
-			}
-			if calKeys[keyMsg.String()] || keyMsg.Type == tea.KeyRunes {
-				var cmd tea.Cmd
-				m.calendar, cmd = m.calendar.Update(msg)
-				return m, cmd
-			}
+	idx := m.sidebar.Index()
+
+	// Main pane focused: route keys to Calendar or Tasks
+	if m.focusPane == FocusMain {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "shift+tab" {
+			m.focusPane = FocusSidebar
+			return m, nil
 		}
-		// Pass WindowSizeMsg to calendar
-		if _, ok := msg.(tea.WindowSizeMsg); ok {
-			// Already handled above
+		if idx == ModuleCalendar {
+			var cmd tea.Cmd
+			m.calendar, cmd = m.calendar.Update(msg)
+			return m, cmd
 		}
-		// Pass async messages (events loaded, errors)
-		var cmd tea.Cmd
-		m.calendar, cmd = m.calendar.Update(msg)
-		return m, cmd
+		if idx == ModuleTasks {
+			var cmd tea.Cmd
+			m.tasks, cmd = m.tasks.Update(msg)
+			return m, cmd
+		}
+	}
+
+	// Sidebar focused or other module: route to sidebar
+	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "tab" {
+		m.focusPane = FocusMain
+		return m, nil
 	}
 
 	var cmd tea.Cmd
 	m.sidebar, cmd = m.sidebar.Update(msg)
 
-	// When switching to Calendar, init it to load events
-	if m.sidebar.Index() == ModuleCalendar {
+	// Init module when it becomes selected
+	switch m.sidebar.Index() {
+	case ModuleCalendar:
 		cmd = tea.Batch(cmd, m.calendar.Init())
+	case ModuleTasks:
+		cmd = tea.Batch(cmd, m.tasks.Init())
 	}
 
 	return m, cmd
@@ -209,7 +240,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the UI.
 func (m Model) View() string {
-	title := titleBarStyle.Render(" Vibe — Personal Data Assistant ")
+	titleStr := " Vibe — Personal Data Assistant "
+	if BuildNumber != "" {
+		titleStr = " Vibe — Personal Data Assistant (build " + BuildNumber + ") "
+	}
+	title := titleBarStyle.Render(titleStr)
 	title = lipgloss.Place(m.width, 1, lipgloss.Left, lipgloss.Top, title)
 
 	sidebarView := sidebarStyle.Width(sidebarWidth + 4).Height(m.height - 6).Render(m.sidebar.View())
@@ -220,9 +255,18 @@ func (m Model) View() string {
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top, sidebarView, mainView)
 
-	help := " ↑/↓ Navigate  Enter Select module  q Quit "
-	if m.sidebar.Index() == ModuleCalendar {
-		help = " ↑/↓ sidebar  ←/→ month  t today  n new  d delete  j/k events  q Quit "
+	help := " Tab: main  ↑/↓ sidebar  q Quit "
+	idx := m.sidebar.Index()
+	if m.focusPane == FocusMain {
+		if idx == ModuleCalendar {
+			help = " Shift+Tab: sidebar  ←/→ month  t today  n new  Enter edit  d delete  j/k events  q Quit "
+		} else if idx == ModuleTasks {
+			help = " Shift+Tab: sidebar  n new  space toggle  d delete  j/k select  q Quit "
+		} else {
+			help = " Shift+Tab: sidebar  q Quit "
+		}
+	} else {
+		help = " Tab: main  ↑/↓ modules  q Quit "
 	}
 	helpBar := helpStyle.Render(help)
 
@@ -234,12 +278,12 @@ func (m Model) mainContent() string {
 	case ModuleNotes:
 		return views.NotesView()
 	case ModuleTasks:
-		return views.TasksView()
+		return m.tasks.View()
 	case ModuleContacts:
 		return views.ContactsView()
 	case ModuleCalendar:
 		return m.calendar.View()
 	default:
-		return views.TasksView()
+		return m.tasks.View()
 	}
 }

@@ -37,7 +37,14 @@ Outlook-style layout: folder sidebar on the left, main content on the right. No 
 git clone <repo-url>
 cd vibe
 go mod tidy
-go build -o vibe ./cmd/vibe
+go build -ldflags "-X github.com/you/vibe/internal/app.BuildNumber=$(date +%s)" -o vibe ./cmd/vibe
+./vibe
+```
+
+Or use the Makefile:
+
+```bash
+make build
 ./vibe
 ```
 
@@ -53,21 +60,35 @@ cp vibe ~/bin/
 
 ### Global
 
-| Key            | Action                   |
-|----------------|--------------------------|
-| `↑` / `↓`      | Navigate sidebar modules |
-| `Enter`        | Select module            |
-| `q` / `Ctrl+C` | Quit                     |
+| Key            | Action                          |
+|----------------|---------------------------------|
+| `Tab`          | Focus main pane (from sidebar)  |
+| `Shift+Tab`    | Focus sidebar (from main pane)  |
+| `↑` / `↓`      | Navigate sidebar modules        |
+| `Enter`        | Select module                   |
+| `q` / `Ctrl+C` | Quit                            |
 
-### Calendar (when Calendar is selected)
+### Calendar (Tab to focus main, then)
 
-| Key        | Action                  |
-|------------|-------------------------|
-| `←` / `→` or `h` / `l` | Previous/next month |
-| `t`        | Jump to today           |
-| `n`        | New event (type title, Enter to save) |
-| `d`        | Delete selected event   |
-| `j` / `k`  | Move event selection    |
+| Key        | Action                                    |
+|------------|-------------------------------------------|
+| `←` / `→` or `h` / `l` | Previous/next month              |
+| `t`        | Jump to today                             |
+| `n`        | New event                                 |
+| `Enter`    | Edit selected event                       |
+| `d`        | Delete selected event                     |
+| `j` / `k`  | Move event selection                      |
+
+**Event form:** Title → Start (HH:MM) → End (HH:MM) → Notes (multiline). **Tab** / **Enter** next field, **Shift+Tab** previous, **Esc** cancel. Notes supports multiline input.
+
+### Tasks (Tab to focus main, then)
+
+| Key       | Action                |
+|-----------|-----------------------|
+| `n`       | New task              |
+| `space` / `Enter` | Toggle done        |
+| `d`       | Delete selected task  |
+| `j` / `k` | Move selection        |
 
 ---
 
@@ -132,8 +153,9 @@ See [PLAN.md](PLAN.md) for the full architecture, schema, and implementation pha
 
 - [x] TUI shell with Outlook-inspired layout
 - [x] SQLite backend and migrations (calendar_events)
-- [x] Calendar: month grid, event list, add/delete events
-- [ ] CRUD for Notes, Tasks, Contacts
+- [x] Calendar: month grid, event list, add/delete, time input
+- [x] Tasks: list, add/delete, toggle done
+- [ ] CRUD for Notes, Contacts
 - [ ] External editor integration, themes
 
 ---

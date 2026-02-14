@@ -1,12 +1,23 @@
 package main
 
 import (
-	_ "github.com/charmbracelet/bubbletea"
-	_ "github.com/charmbracelet/bubbles"
-	_ "github.com/charmbracelet/lipgloss"
-	_ "modernc.org/sqlite"
+	"log"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/you/vibe/internal/app"
+	"github.com/you/vibe/internal/config"
 )
 
 func main() {
-	// Placeholder - will be implemented per PLAN.md
+	cfg, err := config.Load()
+	if err != nil {
+		log.Printf("config load warning: %v (using defaults)", err)
+	}
+
+	m := app.New(cfg.DefaultView)
+	p := tea.NewProgram(m, tea.WithAltScreen())
+
+	if _, err := p.Run(); err != nil {
+		log.Fatal(err)
+	}
 }

@@ -1,0 +1,25 @@
+# Binary (root only, not cmd/vibe/)
+/vibe
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/vendor/
+
+# Test
+*.test
+coverage.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Config / data (user-specific, don't commit)
+*.db
+*.db-journal
+config.json

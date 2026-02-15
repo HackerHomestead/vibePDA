@@ -1,5 +1,7 @@
 # vibePDA
 
+<img src="assets/icon.png" alt="vibePDA icon" width="48" height="48" align="left" />
+
 **A terminal personal data assistant** — Notes, Tasks, Contacts, and Calendar in a single TUI, inspired by classic Outlook.
 
 ![vibePDA Demo](docs/images/vibePDA-demo.gif)
@@ -147,6 +149,7 @@ make install
 - **PLAN.md**: Technical architecture and design notes
 - **docs/TESTING.md**: Testing documentation
 - **docs/CODE_REVIEW.md**: Senior developer code review and recommendations
+- **assets/**: Project icon (`icon.svg`, `icon.png`). Regenerate PNG: `convert -background none -density 256 assets/icon.svg -resize 256x256 assets/icon.png`
 - **docs/images/**: Screenshots and animated demo (`scripts/gen_screenshots.py` to regenerate)
 
 ## Tests
@@ -187,6 +190,7 @@ vibe/
 │   ├── storage.h           # Storage API
 │   └── storage_file.c      # File-based backend (all platforms)
 ├── tests/              # Unit tests (app + storage)
+├── assets/             # icon.svg, icon.png (project icon)
 ├── scripts/            # gen_screenshots.py (PNG + GIF for docs)
 ├── README.md, CHANGELOG.md, PLAN.md, VERSION
 └── docs/

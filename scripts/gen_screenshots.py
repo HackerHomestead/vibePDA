@@ -28,6 +28,10 @@ CELL_H = 18
 PADDING = 4
 BORDER = 2
 
+# Layout: sidebar 18 chars (matches app.c sidebar_width)
+SIDEBAR_WIDTH = 18
+MAIN_X = SIDEBAR_WIDTH * CELL_W + PADDING + BORDER  # Content starts after sidebar
+
 # Colors (approximate terminal)
 BG = (0, 0, 0)
 FG = (170, 170, 170)
@@ -98,32 +102,34 @@ def render_notes_view(module_idx=0):
     )
     draw.text((PADDING + BORDER, CELL_H + PADDING), menu, font=font, fill=MENU_FG)
 
-    # Sidebar
+    # Sidebar (18 chars wide, matches app)
     content_top = 2 * CELL_H + PADDING
+    sidebar_right = SIDEBAR_WIDTH * CELL_W + PADDING + BORDER
     for i, mod in enumerate(MODULES):
         y = content_top + (i + 1) * CELL_H
         prefix = "> " if i == module_idx else "  "
         text = prefix + mod
         if i == module_idx:
             draw.rectangle(
-                [(0, y - 2), (18 * CELL_W // 2, y + CELL_H - 2)],
+                [(0, y - 2), (sidebar_right - 1, y + CELL_H - 2)],
                 fill=SIDEBAR_SEL_BG,
             )
             draw.text((PADDING + BORDER, y), text, font=font, fill=SIDEBAR_SEL_FG)
         else:
             draw.text((PADDING + BORDER, y), text, font=font, fill=FG)
 
-    # Main content - note cards
-    main_col = 20
-    cards = [
-        ("1  Grocery list", "Milk, eggs, bread, coffee"),
-        ("2  Project ideas", "CLI tool for backups, TUI dashboard"),
-        ("3  Meeting notes", "Discuss Q1 goals, budget review"),
-    ]
-    for i, (title, content) in enumerate(cards):
-        y = content_top + (i + 1) * CELL_H
-        draw.text((PADDING + BORDER + main_col * CELL_W // 2, y), title, font=font, fill=CARD_TITLE)
-        draw.text((PADDING + BORDER + main_col * CELL_W // 2, y + CELL_H), content[:50], font=font, fill=FG)
+    # Main content header + note card (bordered, matches actual app)
+    draw.text((MAIN_X, content_top + CELL_H), "Notes (3 items)", font=font_bold, fill=FG)
+    card_x = MAIN_X
+    card_w = img.width - card_x - PADDING - BORDER
+    card_top = content_top + 2 * CELL_H
+    if card_w > 20:
+        # Bordered card: Title + Content (one note at a time)
+        draw.rectangle([(card_x, card_top), (card_x + card_w, card_top + 5 * CELL_H)],
+                       outline=FG, fill=(25, 25, 25))
+        draw.text((card_x + 8, card_top + 4), " Title: Grocery list", font=font_bold, fill=CARD_TITLE)
+        draw.text((card_x + 8, card_top + CELL_H + 4), "Milk, eggs, bread, coffee", font=font, fill=FG)
+        draw.text((card_x + 8, card_top + 4 * CELL_H + 4), " Note 1 of 3 (Up/Down) ", font=font, fill=STATUS_FG)
 
     # Status bar
     status_y = (ROWS - 1) * CELL_H + PADDING
@@ -142,6 +148,7 @@ def render_tasks_view():
     draw = ImageDraw.Draw(img)
     font_path = find_mono_font()
     font = ImageFont.truetype(font_path, 14) if font_path else ImageFont.load_default()
+    font_bold = ImageFont.truetype(font_path, 14) if font_path else font
 
     # Title bar
     title = " vibePDA  | Tasks "
@@ -158,29 +165,32 @@ def render_tasks_view():
 
     # Sidebar - Tasks selected
     content_top = 2 * CELL_H + PADDING
+    sidebar_right = SIDEBAR_WIDTH * CELL_W + PADDING + BORDER
     for i, mod in enumerate(MODULES):
         y = content_top + (i + 1) * CELL_H
         prefix = "> " if i == 1 else "  "
         text = prefix + mod
         if i == 1:
             draw.rectangle(
-                [(0, y - 2), (18 * CELL_W // 2, y + CELL_H - 2)],
+                [(0, y - 2), (sidebar_right - 1, y + CELL_H - 2)],
                 fill=SIDEBAR_SEL_BG,
             )
             draw.text((PADDING + BORDER, y), text, font=font, fill=SIDEBAR_SEL_FG)
         else:
             draw.text((PADDING + BORDER, y), text, font=font, fill=FG)
 
-    # Task list
+    # Main content header + task list (format: [x] id  title)
+    draw.text((MAIN_X, content_top + CELL_H), "Tasks (4 items)", font=font_bold, fill=FG)
     tasks = [
-        "[ ] Buy groceries",
-        "[X] Finish report",
-        "[ ] Call dentist",
-        "[ ] Review PRs",
+        (" ", 1, "Buy groceries"),
+        ("X", 2, "Finish report"),
+        (" ", 3, "Call dentist"),
+        (" ", 4, "Review PRs"),
     ]
-    for i, t in enumerate(tasks):
-        y = content_top + (i + 1) * CELL_H
-        draw.text((PADDING + BORDER + 10 * CELL_W, y), t, font=font, fill=FG)
+    for i, (mark, tid, title) in enumerate(tasks):
+        y = content_top + (i + 2) * CELL_H
+        line = f"[{mark}] {tid:3d}  {title}"
+        draw.text((MAIN_X, y), line, font=font, fill=FG)
 
     # Status bar
     status_y = (ROWS - 1) * CELL_H + PADDING
@@ -230,6 +240,7 @@ def render_search_view():
     draw = ImageDraw.Draw(img)
     font_path = find_mono_font()
     font = ImageFont.truetype(font_path, 14) if font_path else ImageFont.load_default()
+    font_bold = ImageFont.truetype(font_path, 14) if font_path else font
 
     # Title bar
     title = " vibePDA  | Notes "
@@ -246,13 +257,14 @@ def render_search_view():
 
     # Sidebar
     content_top = 2 * CELL_H + PADDING
+    sidebar_right = SIDEBAR_WIDTH * CELL_W + PADDING + BORDER
     for i, mod in enumerate(MODULES):
         y = content_top + (i + 1) * CELL_H
         prefix = "> " if i == 0 else "  "
         text = prefix + mod
         if i == 0:
             draw.rectangle(
-                [(0, y - 2), (18 * CELL_W // 2, y + CELL_H - 2)],
+                [(0, y - 2), (sidebar_right - 1, y + CELL_H - 2)],
                 fill=SIDEBAR_SEL_BG,
             )
             draw.text((PADDING + BORDER, y), text, font=font, fill=SIDEBAR_SEL_FG)
@@ -264,9 +276,10 @@ def render_search_view():
     draw.rectangle([(0, status_y), (img.width, img.height)], fill=(60, 40, 0))
     draw.text((PADDING + BORDER, status_y), " Search: grocery_ ", font=font, fill=(255, 255, 200))
 
-    # Filtered result
-    draw.text((PADDING + BORDER + 10 * CELL_W, content_top + CELL_H), "1  Grocery list", font=font, fill=CARD_TITLE)
-    draw.text((PADDING + BORDER + 10 * CELL_W, content_top + 2 * CELL_H), "Milk, eggs, bread, coffee", font=font, fill=FG)
+    # Filtered result (Notes with filter applied)
+    draw.text((MAIN_X, content_top + CELL_H), "Notes (1 item) [Filter: grocery]", font=font_bold, fill=FG)
+    draw.text((MAIN_X, content_top + 2 * CELL_H), "1  Grocery list", font=font, fill=CARD_TITLE)
+    draw.text((MAIN_X, content_top + 3 * CELL_H), "Milk, eggs, bread, coffee", font=font, fill=FG)
 
     return img
 

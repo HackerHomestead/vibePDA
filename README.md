@@ -18,7 +18,7 @@
 |-----------|-----------------------------|
 | **Notes** | Scratchpad and quick notes  |
 | **Tasks** | To-do list                  |
-| **Contacts** | Contact list            |
+| **Contacts** | Contact list (business card view) |
 | **Calendar** | Events and appointments |
 | **Facts** | Key-value pairs (e.g. SSN, passwords) |
 | **Finances** | General ledger (stub) |
@@ -27,6 +27,7 @@
 
 - **1980s-style TUI**: Menu bar (F1–F5, F10), status line. Uses curses (ncurses/PDCurses).
 - **Note cards**: Notes display as cards (Title + Content); Up/Down navigate between them.
+- **Contact cards**: Contacts display as business cards (name, email, phone, notes); Up/Down navigate.
 
 | Notes | Tasks | Search | Help |
 |:-----:|:-----:|:------:|:----:|

@@ -204,6 +204,13 @@ typedef struct {
     int want_idx;
 } NoteFetchCtx;
 
+typedef struct {
+    VibeContact contact;
+    int found;
+    int idx;
+    int want_idx;
+} ContactFetchCtx;
+
 static void fetch_note_at_cb(const VibeNote *n, void *v) {
     NoteFetchCtx *c = (NoteFetchCtx *)v;
     if (c->idx == c->want_idx) {
@@ -314,17 +321,126 @@ static void draw_task_cb(const VibeTask *t, void *v) {
     c->idx++;
 }
 
-static void draw_contact_cb(const VibeContact *c, void *v) {
-    DrawCtx *cx = (DrawCtx *)v;
-    if (*cx->row >= cx->bottom) return;
-    tui_goto(*cx->row, cx->main_col);
-    if (cx->idx == cx->selected && !cx->focus_sidebar) tui_attr_reverse();
-    char line[256];
-    snprintf(line, sizeof(line), "%3d  %.*s", c->id, cx->main_width - 8, c->name[0] ? c->name : "(no name)");
-    tui_putstr(line);
-    if (cx->idx == cx->selected && !cx->focus_sidebar) tui_attr_normal();
-    (*cx->row)++;
-    cx->idx++;
+static void fetch_contact_at_cb(const VibeContact *c, void *v) {
+    ContactFetchCtx *ctx = (ContactFetchCtx *)v;
+    if (ctx->idx == ctx->want_idx) {
+        ctx->contact = *c;
+        ctx->found = 1;
+    }
+    ctx->idx++;
+}
+
+static void draw_contact_card(AppState *a, int main_col, int main_width, int top, int bottom) {
+    const char *filter_query = a->search_query[0] ? a->search_query : NULL;
+    int count = get_item_count_with_filter(MODULE_CONTACTS, filter_query);
+    if (count == 0) return;
+    ContactFetchCtx ctx = {{0}, 0, 0, a->selected_index};
+    if (filter_query) {
+        storage_contacts_list_filtered(fetch_contact_at_cb, &ctx, filter_query);
+    } else {
+        storage_contacts_list(fetch_contact_at_cb, &ctx);
+    }
+    if (!ctx.found) return;
+
+    const VibeContact *c = &ctx.contact;
+    int box_width = main_width;
+    int box_left = main_col;
+    if (box_width < 10) box_width = 10;
+
+    /* Card top border */
+    tui_goto(top, box_left);
+    tui_putchar('+');
+    for (int i = 0; i < box_width; i++) tui_putchar('-');
+    tui_putchar('+');
+
+    /* Name row (bold, like business card header) */
+    tui_goto(top + 1, box_left);
+    tui_putchar('|');
+    tui_attr_bold();
+    tui_putstr(" ");
+    tui_putstr(c->name[0] ? c->name : "(no name)");
+    tui_attr_normal();
+    for (int i = 1 + (int)strlen(c->name[0] ? c->name : "(no name)"); i < box_width - 1; i++) tui_putchar(' ');
+    tui_putchar('|');
+
+    /* Separator */
+    tui_goto(top + 2, box_left);
+    tui_putchar('|');
+    for (int i = 0; i < box_width; i++) tui_putchar('-');
+    tui_putchar('|');
+
+    /* Email row */
+    tui_goto(top + 3, box_left);
+    tui_putchar('|');
+    tui_putstr(" Email: ");
+    tui_putstr(c->email[0] ? c->email : "-");
+    for (int i = 7 + (int)strlen(c->email[0] ? c->email : "-"); i < box_width - 1; i++) tui_putchar(' ');
+    tui_putchar('|');
+
+    /* Phone row */
+    tui_goto(top + 4, box_left);
+    tui_putchar('|');
+    tui_putstr(" Phone: ");
+    tui_putstr(c->phone[0] ? c->phone : "-");
+    for (int i = 7 + (int)strlen(c->phone[0] ? c->phone : "-"); i < box_width - 1; i++) tui_putchar(' ');
+    tui_putchar('|');
+
+    /* Notes section (if present) */
+    int row = top + 5;
+    if (c->notes[0]) {
+        tui_goto(row, box_left);
+        tui_putchar('|');
+        for (int i = 0; i < box_width - 2; i++) tui_putchar('-');
+        tui_putchar('|');
+        row++;
+
+        const char *p = c->notes;
+        int line = 0;
+        int i = 0;
+        int max_lines = bottom - top - 8;
+        if (max_lines < 1) max_lines = 1;
+        int content_width = box_width - 2;
+        if (content_width < 1) content_width = 1;
+        while (line < max_lines) {
+            tui_goto(row + line, box_left);
+            tui_putchar('|');
+            int col = 1;
+            while (i < (int)strlen(c->notes) && col < box_width - 1) {
+                char ch = p[i++];
+                if (ch == '\n') break;
+                tui_putchar(ch >= 32 && ch < 127 ? ch : ' ');
+                col++;
+            }
+            if (i < (int)strlen(c->notes) && p[i] == '\n') i++;
+            for (; col < box_width - 1; col++) tui_putchar(' ');
+            tui_putchar('|');
+            line++;
+            if (i >= (int)strlen(c->notes)) break;
+        }
+        for (; line < max_lines; line++) {
+            tui_goto(row + line, box_left);
+            tui_putchar('|');
+            for (int col = 1; col < box_width - 1; col++) tui_putchar(' ');
+            tui_putchar('|');
+        }
+        row += max_lines;
+    }
+
+    /* Bottom border */
+    tui_goto(row, box_left);
+    tui_putchar('+');
+    for (int i = 0; i < box_width; i++) tui_putchar('-');
+    tui_putchar('+');
+
+    /* Card index hint */
+    tui_goto(row + 1, box_left);
+    {
+        char buf[64];
+        snprintf(buf, sizeof(buf), " Contact %d of %d (Up/Down) ", a->selected_index + 1, count);
+        tui_attr_reverse();
+        tui_putstr(buf);
+        tui_attr_normal();
+    }
 }
 
 static void draw_event_cb(const VibeCalendarEvent *e, void *v) {
@@ -461,10 +577,8 @@ static void draw_main(AppState *a) {
             storage_tasks_list(draw_task_cb, &dctx);
         }
     } else if (a->current_module == MODULE_CONTACTS) {
-        if (filter_query) {
-            storage_contacts_list_filtered(draw_contact_cb, &dctx, filter_query);
-        } else {
-            storage_contacts_list(draw_contact_cb, &dctx);
+        if (count > 0) {
+            draw_contact_card(a, main_col, main_width, row, bottom);
         }
     } else if (a->current_module == MODULE_CALENDAR) {
         if (filter_query) {

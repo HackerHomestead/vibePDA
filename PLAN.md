@@ -65,7 +65,7 @@ All user-facing entities support **soft-delete** (deleted_at). Trash lists items
 |----------|------------------------|--------------------------------------|
 | Notes    | Scratchpad, quick notes| Note list; New/Edit/Delete; Search (title/content) |
 | Tasks    | Todo list              | Task list; done flag; New/Edit/Delete; Search (title) |
-| Contacts | Contact list           | Contact list/cards; New/Edit/Delete; Search (name/email/phone) |
+| Contacts | Contact list           | Business card view (name, email, phone, notes); New/Edit/Delete; Search (name/email/phone) |
 | Calendar | Events & appointments  | Month grid + event list; New/Edit/Delete; Search (title) |
 | Facts    | Key-value pairs        | Fact list (key = value); New/Edit/Delete; Search (key/value) |
 | Finances | General ledger         | Finance entry list (stub); Search (description/category/account) |

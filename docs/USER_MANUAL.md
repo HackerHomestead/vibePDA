@@ -177,12 +177,13 @@ The sidebar shows all available modules:
 
 ### Contacts
 
-**Purpose**: Contact list with name, email, phone.
+**Purpose**: Contact list with name, email, phone, notes.
 
 **Features**:
-- Name, email, phone fields
+- Name, email, phone, notes fields
+- Business card view: each contact shown as a card with all details
+- Up/Down to navigate between contacts
 - Search by name, email, or phone
-- Simple list display
 
 **Creating a Contact**:
 1. Press **F2** or **N**
@@ -584,8 +585,9 @@ Run a single operation and exit:
 
 ### Contacts Module
 
+- Contacts display as business cards (name, email, phone, notes)
+- Up/Down navigate between contacts; footer shows "Contact N of M"
 - Search works across name, email, and phone
-- Useful for finding contacts by any identifier
 
 ### Trash Module
 

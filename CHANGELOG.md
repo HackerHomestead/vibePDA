@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Contact business cards**: Contacts module now displays contacts as business cards (name, email, phone, notes) with Up/Down navigation, matching the Notes card style.
 - **Code review**: Senior developer review with documentation, comments, and improvements. See `docs/CODE_REVIEW.md`.
 - **Entity type constants**: Replaced magic numbers in storage layer for maintainability.
 - **Trash CLI**: `trash list` and `trash restore` now support `fact` type; display shows correct type names.
@@ -19,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Storage migration**: Migration from .txt to .bin now uses `write_u32()` for consistent little-endian output.
 - **copy_str**: Added null and max<=0 guards for safety.
 - **Documentation**: Enhanced file headers in storage_file.c, storage.h, types.h, main.c, app.c, tui.c, vibe_config.c.
+- **Screenshots**: Fixed layout overlap (sidebar vs main content), added module headers, updated Notes to bordered card format, Tasks to `[x] id title` format.
 
 ---
 

@@ -78,7 +78,7 @@ config.h: config.h.in VERSION
 	sed 's/@PACKAGE@/$(PACKAGE)/g;s/@VERSION@/$(VERSION)/g' config.h.in > config.h
 
 run_tests: config.h
-	$(CC) $(CPPFLAGS) -Itests $(CFLAGS) -o run_tests tests/run_tests.c tests/test_app.c tests/test_storage.c tests/fixture_parks.c src/app.c src/tui.c src/storage_file.c -lncurses
+	$(CC) $(CPPFLAGS) -Itests $(CFLAGS) -o run_tests tests/run_tests.c tests/test_app.c tests/test_storage.c tests/test_config.c tests/fixture_parks.c src/app.c src/tui.c src/vibe_config.c src/storage_file.c -lncurses
 
 test_tui: config.h
 	$(CC) $(CPPFLAGS) -Itests -Isrc $(CFLAGS) -o test_tui tests/test_tui.c src/app.c src/tui.c src/vibe_config.c src/storage_file.c -lncurses

@@ -57,4 +57,25 @@ typedef struct {
     char deleted_at[VIBE_DATETIME_MAX];
 } VibeFact;
 
+typedef struct {
+    int id;
+    char date[VIBE_DATETIME_MAX];
+    char description[VIBE_TITLE_MAX];
+    double amount;
+    char category[VIBE_TITLE_MAX];
+    char account[VIBE_TITLE_MAX];
+    char notes[VIBE_CONTENT_MAX];
+    char created_at[VIBE_DATETIME_MAX];
+    char deleted_at[VIBE_DATETIME_MAX];
+} VibeFinanceEntry;
+
+typedef struct {
+    int id;
+    char title[VIBE_TITLE_MAX];
+    char template_name[VIBE_TITLE_MAX];
+    char content[VIBE_CONTENT_MAX];
+    char created_at[VIBE_DATETIME_MAX];
+    char deleted_at[VIBE_DATETIME_MAX];
+} VibeDocument;
+
 #endif

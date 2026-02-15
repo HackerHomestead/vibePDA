@@ -51,8 +51,46 @@ int storage_fact_get(int id, VibeFact *out);
 int storage_facts_update(int id, const char *key, const char *value);
 int storage_facts_delete(int id);
 
-/* Trash: list deleted items; restore by entity type (0=note,1=task,2=contact,3=event,4=fact) and id */
+/* Finances CRUD */
+int storage_finances_add(const char *date, const char *description, double amount, const char *category, const char *account, const char *notes);
+void storage_finances_list(void (*cb)(const VibeFinanceEntry *, void *), void *ctx);
+int storage_finance_get(int id, VibeFinanceEntry *out);
+int storage_finances_update(int id, const char *date, const char *description, double amount, const char *category, const char *account, const char *notes);
+int storage_finances_delete(int id);
+int storage_finances_count(void);
+
+/* Documents CRUD */
+int storage_documents_add(const char *title, const char *template_name, const char *content);
+void storage_documents_list(void (*cb)(const VibeDocument *, void *), void *ctx);
+int storage_document_get(int id, VibeDocument *out);
+int storage_documents_update(int id, const char *title, const char *template_name, const char *content);
+int storage_documents_delete(int id);
+int storage_documents_count(void);
+
+/* Trash: list deleted items; restore by entity type (0=note,1=task,2=contact,3=event,4=fact,5=finance,6=document) and id */
 void storage_trash_list(void (*cb)(int entity_type, int id, const char *title, void *), void *ctx);
 int storage_restore(int entity_type, int id);
+/* Permanent delete: actually remove records from storage (cannot be undone) */
+int storage_permanent_delete(int entity_type, int id);
+int storage_empty_trash(void);
+
+/* Search/Filter: filter list results by query (case-insensitive substring match) */
+/* Pass NULL or empty string to disable filtering */
+void storage_set_search_filter(const char *query);
+
+/* Notes search */
+void storage_notes_list_filtered(void (*cb)(const VibeNote *, void *), void *ctx, const char *query);
+/* Tasks search */
+void storage_tasks_list_filtered(void (*cb)(const VibeTask *, void *), void *ctx, const char *query);
+/* Contacts search */
+void storage_contacts_list_filtered(void (*cb)(const VibeContact *, void *), void *ctx, const char *query);
+/* Events search */
+void storage_events_list_filtered(void (*cb)(const VibeCalendarEvent *, void *), void *ctx, const char *query);
+/* Facts search */
+void storage_facts_list_filtered(void (*cb)(const VibeFact *, void *), void *ctx, const char *query);
+/* Finances search */
+void storage_finances_list_filtered(void (*cb)(const VibeFinanceEntry *, void *), void *ctx, const char *query);
+/* Documents search */
+void storage_documents_list_filtered(void (*cb)(const VibeDocument *, void *), void *ctx, const char *query);
 
 #endif

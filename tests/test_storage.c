@@ -27,6 +27,7 @@ static void remove_test_dir(const char *path) {
     snprintf(buf, sizeof(buf), "%s/tasks.txt", path);    (void)unlink(buf);
     snprintf(buf, sizeof(buf), "%s/contacts.txt", path); (void)unlink(buf);
     snprintf(buf, sizeof(buf), "%s/events.txt", path);   (void)unlink(buf);
+    snprintf(buf, sizeof(buf), "%s/facts.txt", path);    (void)unlink(buf);
     (void)rmdir(path);
 #else
     (void)path;
@@ -124,6 +125,107 @@ void test_storage(void) {
         assert(storage_events_delete(event_id));
         assert(!storage_event_get(event_id, &e));
         assert(storage_events_count() == events - 1);
+    }
+
+    /* Trash: test soft-delete and trash listing */
+    {
+        int initial_trash_count = storage_trash_count();
+        assert(initial_trash_count >= 3); /* Should have the 3 deleted items from above */
+        
+        /* Test trash_list callback */
+        typedef struct {
+            int count;
+            int found_task;
+            int found_contact;
+            int found_event;
+        } TrashCountCtx;
+        
+        TrashCountCtx trash_ctx = {0, 0, 0, 0};
+        
+        void count_trash_items(int entity_type, int id, const char *title, void *ctx) {
+            TrashCountCtx *c = (TrashCountCtx *)ctx;
+            c->count++;
+            if (entity_type == 1) c->found_task = 1;
+            if (entity_type == 2) c->found_contact = 1;
+            if (entity_type == 3) c->found_event = 1;
+            (void)id; (void)title;
+        }
+        
+        storage_trash_list(count_trash_items, &trash_ctx);
+        assert(trash_ctx.count == initial_trash_count);
+        assert(trash_ctx.found_task == 1);
+        assert(trash_ctx.found_contact == 1);
+        assert(trash_ctx.found_event == 1);
+    }
+
+    /* Trash: test restore */
+    {
+        /* Find a deleted task to restore */
+        int deleted_task_id = 0;
+        void find_deleted_task(int entity_type, int id, const char *title, void *ctx) {
+            if (entity_type == 1 && deleted_task_id == 0) {
+                *(int *)ctx = id;
+            }
+            (void)title;
+        }
+        storage_trash_list(find_deleted_task, &deleted_task_id);
+        
+        if (deleted_task_id > 0) {
+            int trash_before = storage_trash_count();
+            assert(storage_restore(1, deleted_task_id)); /* Restore task */
+            assert(storage_trash_count() == trash_before - 1);
+            
+            /* Verify it's restored (can be retrieved normally) */
+            VibeTask t;
+            assert(storage_task_get(deleted_task_id, &t));
+            assert(t.id == deleted_task_id);
+            
+            /* Delete it again for cleanup */
+            storage_tasks_delete(deleted_task_id);
+        }
+    }
+
+    /* Trash: test permanent delete */
+    {
+        /* Create a fact, delete it, then permanently delete it */
+        int fact_id = storage_facts_add("test_key", "test_value");
+        assert(fact_id > 0);
+        assert(storage_facts_delete(fact_id));
+        
+        int trash_before = storage_trash_count();
+        assert(storage_permanent_delete(4, fact_id)); /* Permanently delete fact */
+        assert(storage_trash_count() == trash_before - 1);
+        
+        /* Verify it's gone from trash */
+        int found_in_trash = 0;
+        void check_trash(int entity_type, int id, const char *title, void *ctx) {
+            if (entity_type == 4 && id == fact_id) {
+                *(int *)ctx = 1;
+            }
+            (void)title;
+        }
+        storage_trash_list(check_trash, &found_in_trash);
+        assert(found_in_trash == 0);
+    }
+
+    /* Trash: test empty_trash */
+    {
+        /* Delete a few more items to have trash */
+        int note_id = 0;
+        void capture_first_note(const VibeNote *n, void *ctx) {
+            if (*(int *)ctx == 0) *(int *)ctx = n->id;
+        }
+        storage_notes_list(capture_first_note, &note_id);
+        if (note_id > 0) {
+            storage_notes_delete(note_id);
+        }
+        
+        int trash_before = storage_trash_count();
+        if (trash_before > 0) {
+            int deleted_count = storage_empty_trash();
+            assert(deleted_count >= 0);
+            assert(storage_trash_count() == 0);
+        }
     }
 
     if (strcmp(data_dir, ".") != 0)

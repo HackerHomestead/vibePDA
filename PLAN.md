@@ -50,9 +50,12 @@ Entities map to C structs in **types.h** and to storage backends (tables or flat
 | **Task**        | Todo           | id, title, done, due_date, priority, created_at, deleted_at |
 | **Contact**     | Contact list   | id, name, email, phone, notes, created_at, deleted_at |
 | **CalendarEvent** | Appointments | id, title, description, start_at, end_at, all_day, deleted_at |
-| **Trash**       | View only      | Restore = clear deleted_at for selected entity |
+| **Fact**        | Key-value pairs | id, key, value, created_at, deleted_at |
+| **FinanceEntry** | General ledger | id, date, description, amount, category, account, notes, created_at, deleted_at |
+| **Document**    | Templated forms | id, title, template_name, content, created_at, deleted_at |
+| **Trash**       | View only      | Restore = clear deleted_at; Permanent delete with confirmation |
 
-All user-facing entities support **soft-delete** (deleted_at). Trash lists items where deleted_at IS NOT NULL; restore clears deleted_at.
+All user-facing entities support **soft-delete** (deleted_at). Trash lists items where deleted_at IS NOT NULL; restore clears deleted_at. Permanent delete removes items completely.
 
 ---
 
@@ -60,12 +63,14 @@ All user-facing entities support **soft-delete** (deleted_at). Trash lists items
 
 | Module   | Description           | Data / view                          |
 |----------|------------------------|--------------------------------------|
-| Notes    | Scratchpad, quick notes| Note list; New/Edit/Delete           |
-| Tasks    | Todo list              | Task list; done flag; New/Edit/Delete|
-| Contacts | Contact list           | Contact list/cards; New/Edit/Delete   |
-| Calendar | Events & appointments  | Month grid + event list; New/Edit/Delete |
-| Facts    | Key-value pairs        | Fact list (key = value); New/Edit/Delete |
-| Trash    | Soft-deleted items     | List deleted items; Restore           |
+| Notes    | Scratchpad, quick notes| Note list; New/Edit/Delete; Search (title/content) |
+| Tasks    | Todo list              | Task list; done flag; New/Edit/Delete; Search (title) |
+| Contacts | Contact list           | Contact list/cards; New/Edit/Delete; Search (name/email/phone) |
+| Calendar | Events & appointments  | Month grid + event list; New/Edit/Delete; Search (title) |
+| Facts    | Key-value pairs        | Fact list (key = value); New/Edit/Delete; Search (key/value) |
+| Finances | General ledger         | Finance entry list (stub); Search (description/category/account) |
+| Documents | Templated forms        | Document list (stub); Search (title/template/content) |
+| Trash    | Soft-deleted items     | List deleted items; Restore; Checkbox selection; Permanent delete |
 
 Sidebar lists module names only (no record counters).
 

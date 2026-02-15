@@ -17,5 +17,6 @@ typedef struct {
 void vibe_config_load(VibeConfig *out);
 void vibe_config_default_db_path(char *buf, int size);
 void vibe_config_default_data_dir(char *buf, int size);
+void vibe_config_print(const VibeConfig *cfg);
 
 #endif

@@ -6,6 +6,8 @@
 
 **C** implementation with three build targets: **1) Linux**, **2) FreeDOS** (DJGPP), **3) WebAssembly** (Emscripten). Uses **curses** (ncurses on Linux, PDCurses on DOS). Terminal: VT102 minimum; on Linux, modern terminal standards (e.g. SGR, 256 colors) may be used. File-based storage on all platforms (no SQLite).
 
+**📖 [User Manual](docs/USER_MANUAL.md)** — Comprehensive guide with detailed instructions for all features.
+
 ---
 
 ## Features
@@ -17,12 +19,16 @@
 | **Contacts** | Contact list            |
 | **Calendar** | Events and appointments |
 | **Facts** | Key-value pairs (e.g. SSN, passwords) |
-| **Trash** | Soft-deleted items, restore |
+| **Finances** | General ledger (stub) |
+| **Documents** | Templated forms (stub) |
+| **Trash** | Soft-deleted items, restore, permanent delete |
 
-- **1980s-style TUI**: Menu bar (F1–F4, F10), status line. Uses curses (ncurses/PDCurses).
+- **1980s-style TUI**: Menu bar (F1–F5, F10), status line. Uses curses (ncurses/PDCurses).
 - **Note cards**: Notes display as cards (Title + Content); Up/Down navigate between them.
 - **Multi-line content editor**: Note body uses a bordered text area with cursor, line numbers (F5), and scrolling (Page Up/Down). Enter=newline, Enter+Enter=save, Esc=cancel.
-- **Hotkeys**: F2/N new, F3/E edit, F4/D delete, F1/? help, F10/q quit; Up/Down navigate; Tab switch pane.
+- **Search/Filter**: Press F5 or / to search/filter items in any module. Filter persists after Enter, press F5 again to clear.
+- **Trash management**: Checkbox selection, select all/none, restore, permanent delete with confirmation.
+- **Hotkeys**: F2/N new, F3/E edit, F4/D delete, F5/ Search, F1/? help, F10/q quit; Up/Down navigate; Tab switch pane.
 
 ---
 
@@ -39,6 +45,9 @@
 
 - **`--help`**, **`-h`** — Print usage and exit.
 - **`--version`**, **`-v`** — Print version and exit.
+- **`--config`** — Print current configuration (data directory, database path, environment variables) and exit.
+- **`--data-dir DIR`** — Override default data directory. All data files (notes.txt, tasks.txt, etc.) will be stored in the specified directory.
+- **`--display MODE`** — Set display size: `small` (80x25), `auto` (terminal size), or `custom COLxROW` (e.g. `--display custom 120x30`).
 - **Unknown arguments** — Print "unknown argument" to stderr, show help, and exit with code 1.
 
 ### One-shot CLI (Linux and DOS)
@@ -49,7 +58,8 @@ Run a single CRUD operation and exit (no TUI):
 - **tasks** — `add <title> [due_date] [priority]` | `list` | `show <id>` | `delete <id>`
 - **contacts** — `add <name> [email] [phone]` | `list` | `delete <id>`
 - **calendar** — `add <title> [start] [end] [all_day]` | `list` | `delete <id>`
-- **trash** — `list` | `restore <type> <id>` (type: note, task, contact, event)
+- **trash** — `list` | `restore <type> <id>` (type: note, task, contact, event, fact)
+- **facts** — `add <key> <value>` | `list` | `show <id>` | `edit <id> <key> <value>` | `delete <id>`
 
 Example: `./vibePDA notes add "My title" "Content"` prints the new note id; `./vibePDA notes list` prints tab-separated id, title, content.
 
@@ -101,6 +111,14 @@ make install
 
 ---
 
+## Documentation
+
+- **README.md**: This file - overview and quick start
+- **docs/USER_MANUAL.md**: Comprehensive user manual with detailed instructions
+- **CHANGELOG.md**: Version history and changes
+- **PLAN.md**: Technical architecture and design notes
+- **docs/TESTING.md**: Testing documentation
+
 ## Tests
 
 ```bash
@@ -109,7 +127,7 @@ make test
 make && ./run_tests
 ```
 
-Runs unit tests for app (UI state / key handling) and storage (backend).
+Runs unit tests for app (UI state / key handling), storage (backend), and trash integration tests.
 
 ---
 

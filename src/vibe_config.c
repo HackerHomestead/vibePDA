@@ -51,3 +51,21 @@ void vibe_config_load(VibeConfig *out) {
     out->editor_path[0] = '\0';
     out->default_module = 0;
 }
+
+void vibe_config_print(const VibeConfig *cfg) {
+    if (!cfg) return;
+    printf("vibePDA Configuration:\n");
+    printf("  Data directory: %s\n", cfg->data_dir[0] ? cfg->data_dir : "(default)");
+    printf("  Database path: %s\n", cfg->database_path[0] ? cfg->database_path : "(not used)");
+    printf("  Editor path: %s\n", cfg->editor_path[0] ? cfg->editor_path : "(not set)");
+    printf("  Default module: %d\n", cfg->default_module);
+#ifdef PLATFORM_LINUX
+    {
+        const char *home = getenv("HOME");
+        const char *data_env = getenv("VIBE_DATA");
+        printf("\nEnvironment:\n");
+        printf("  HOME: %s\n", home ? home : "(not set)");
+        printf("  VIBE_DATA: %s\n", data_env ? data_env : "(not set)");
+    }
+#endif
+}

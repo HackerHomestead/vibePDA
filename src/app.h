@@ -8,8 +8,10 @@
 #define MODULE_CONTACTS 2
 #define MODULE_CALENDAR 3
 #define MODULE_FACTS    4
-#define MODULE_TRASH    5
-#define MODULE_COUNT    6
+#define MODULE_FINANCES 5
+#define MODULE_DOCUMENTS 6
+#define MODULE_TRASH    7
+#define MODULE_COUNT    8
 
 #define APP_MESSAGE_LEN 80
 #define COMMAND_BUF_LEN 256
@@ -41,6 +43,10 @@ typedef struct {
     int content_edit_cursor_pos;  /* cursor position in buffer */
     int content_edit_show_line_numbers;  /* 1=show line numbers */
     int content_edit_scroll_offset;  /* line number to start displaying from */
+    /* Search/Filter mode */
+    int search_mode;  /* 1=search active, 0=normal */
+    char search_query[256];  /* current search string */
+    int search_len;  /* length of search query */
 } AppState;
 
 void app_init(AppState *a, int rows, int cols);

@@ -21,6 +21,8 @@ static void print_help(const char *prog) {
     printf("Options:\n");
     printf("  -h, --help     display this help and exit\n");
     printf("  -v, --version  output version information and exit\n");
+    printf("  --config       print current configuration and exit\n");
+    printf("  --data-dir DIR override default data directory\n");
     printf("  --display MODE set display size: small (80x25), auto (terminal),\n");
     printf("                 custom COLxROW (e.g. --display custom 80x24)\n\n");
     printf("One-shot CLI (no TUI):\n");
@@ -35,7 +37,9 @@ static void print_help(const char *prog) {
     printf("  trash    list | restore <type> <id>   (type: note|task|contact|event|fact)\n\n");
     printf("  --mode tui             Terminal UI (default):\n");
     printf("                         F1 Help, F2 New, F3 Edit, F4 Delete\n");
-    printf("  -cmd, --mode command   Interactive command mode (REPL, like GW-BASIC)\n\n");
+    printf("  -cmd, --cmd, --mode command   Interactive command mode (REPL, like GW-BASIC):\n");
+    printf("                                Type commands like 'notes list', 'tasks add ...'\n");
+    printf("                                Use 'help' for available commands, 'quit' to exit\n\n");
     printf("TUI: Up/Down navigate, Tab switch pane, Enter edit, N new, D delete, ? help.\n");
     printf("     Content editor: Enter=newline, Enter+Enter=save, Esc=cancel, F5=line#.\n");
     printf("     Page Up/Down scrolls long notes. Arrow keys move cursor.\n");
@@ -53,6 +57,7 @@ static void print_version(void) {
 static int display_mode = DISPLAY_AUTO;
 static int display_cols = 80;
 static int display_rows = 25;
+static char *override_data_dir = NULL; /* User-specified data directory override */
 
 /* Returns: 0=continue, 1=handled(help/version), 2=unknown argument error */
 static int parse_args(int argc, char **argv) {
@@ -66,6 +71,24 @@ static int parse_args(int argc, char **argv) {
         if (strcmp(arg, "--version") == 0 || strcmp(arg, "-v") == 0) {
             print_version();
             return 1;
+        }
+        if (strcmp(arg, "--config") == 0) {
+            VibeConfig cfg;
+            vibe_config_load(&cfg);
+            if (override_data_dir) {
+                snprintf(cfg.data_dir, sizeof(cfg.data_dir), "%s", override_data_dir);
+            }
+            vibe_config_print(&cfg);
+            return 1;
+        }
+        if (strcmp(arg, "--data-dir") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "unknown argument: %s (missing directory)\n", arg);
+                print_help(argv[0]);
+                return 2;
+            }
+            override_data_dir = argv[++i];
+            continue;
         }
         if (strcmp(arg, "-cmd") == 0 || strcmp(arg, "--cmd") == 0)
             continue;
@@ -263,6 +286,9 @@ static int tokenize_line(char *line, char **tokens, int max_tok) {
 static void run_interactive_cmd_mode(void) {
     VibeConfig cfg;
     vibe_config_load(&cfg);
+    if (override_data_dir) {
+        snprintf(cfg.data_dir, sizeof(cfg.data_dir), "%s", override_data_dir);
+    }
     storage_init(cfg.data_dir);
 
 #if defined(PLATFORM_LINUX)
@@ -417,8 +443,33 @@ static void run_interactive_cmd_mode(void) {
 #if defined(PLATFORM_LINUX) || defined(PLATFORM_DOS)
 static int run_cli(int argc, char **argv) {
     if (argc < 2) return -1;
-    const char *entity = argv[1];
-    const char *action = argc >= 3 ? argv[2] : "";
+    /* Skip over known options that don't cause early exit */
+    int arg_idx = 1;
+    while (arg_idx < argc) {
+        const char *arg = argv[arg_idx];
+        if (strcmp(arg, "--data-dir") == 0) {
+            arg_idx += 2; /* Skip --data-dir and its value */
+            continue;
+        }
+        if (strcmp(arg, "--display") == 0) {
+            arg_idx += 2; /* Skip --display and its value */
+            if (arg_idx < argc && strcmp(argv[arg_idx - 1], "custom") == 0) {
+                arg_idx++; /* Skip COLxROW for custom display */
+            }
+            continue;
+        }
+        if (strcmp(arg, "--mode") == 0 || strcmp(arg, "-cmd") == 0 || strcmp(arg, "--cmd") == 0) {
+            arg_idx++;
+            if (arg_idx < argc && (strcmp(argv[arg_idx], "tui") == 0 || strcmp(argv[arg_idx], "command") == 0)) {
+                arg_idx++;
+            }
+            continue;
+        }
+        break; /* Found non-option argument, this should be the entity */
+    }
+    if (arg_idx >= argc) return -1;
+    const char *entity = argv[arg_idx];
+    const char *action = arg_idx + 1 < argc ? argv[arg_idx + 1] : "";
     /* Entity-only (e.g. "notes") defaults to "list" for interactive mode */
     if (action[0] == '\0' && (strcmp(entity, "notes") == 0 || strcmp(entity, "tasks") == 0 ||
         strcmp(entity, "contacts") == 0 || strcmp(entity, "calendar") == 0 || strcmp(entity, "trash") == 0))
@@ -426,12 +477,15 @@ static int run_cli(int argc, char **argv) {
 
     VibeConfig cfg;
     vibe_config_load(&cfg);
+    if (override_data_dir) {
+        snprintf(cfg.data_dir, sizeof(cfg.data_dir), "%s", override_data_dir);
+    }
     storage_init(cfg.data_dir);
 
     if (strcmp(entity, "notes") == 0) {
         if (strcmp(action, "add") == 0) {
-            const char *title = argc >= 4 ? argv[3] : "";
-            const char *content = argc >= 5 ? argv[4] : "";
+            const char *title = arg_idx + 2 < argc ? argv[arg_idx + 2] : "";
+            const char *content = arg_idx + 3 < argc ? argv[arg_idx + 3] : "";
             int id = storage_notes_add(title, content);
             if (id) { printf("%d\n", id); return 0; }
             return 1;
@@ -444,8 +498,8 @@ static int run_cli(int argc, char **argv) {
             storage_notes_list(print_note, NULL);
             return 0;
         }
-        if (strcmp(action, "show") == 0 && argc >= 4) {
-            int id = atoi(argv[3]);
+        if (strcmp(action, "show") == 0 && arg_idx + 2 < argc) {
+            int id = atoi(argv[arg_idx + 2]);
             VibeNote n;
             if (storage_note_get(id, &n)) {
                 printf("id: %d\ntitle: %s\ncontent: %s\ncreated: %s\n", n.id, n.title, n.content, n.created_at);
@@ -454,15 +508,15 @@ static int run_cli(int argc, char **argv) {
             fprintf(stderr, "Note %d not found\n", id);
             return 1;
         }
-        if (strcmp(action, "edit") == 0 && argc >= 5) {
-            int id = atoi(argv[3]);
-            const char *title = argv[4];
-            const char *content = argc >= 6 ? argv[5] : "";
+        if (strcmp(action, "edit") == 0 && arg_idx + 3 < argc) {
+            int id = atoi(argv[arg_idx + 2]);
+            const char *title = argv[arg_idx + 3];
+            const char *content = arg_idx + 4 < argc ? argv[arg_idx + 4] : "";
             if (storage_notes_update(id, title, content)) { printf("ok\n"); return 0; }
             return 1;
         }
-        if (strcmp(action, "delete") == 0 && argc >= 4) {
-            int id = atoi(argv[3]);
+        if (strcmp(action, "delete") == 0 && arg_idx + 2 < argc) {
+            int id = atoi(argv[arg_idx + 2]);
             if (storage_notes_delete(id)) { printf("ok\n"); return 0; }
             return 1;
         }
@@ -470,9 +524,9 @@ static int run_cli(int argc, char **argv) {
 
     if (strcmp(entity, "tasks") == 0) {
         if (strcmp(action, "add") == 0) {
-            const char *title = argc >= 4 ? argv[3] : "";
-            const char *due = argc >= 5 ? argv[4] : "";
-            int prio = argc >= 6 ? atoi(argv[5]) : 0;
+            const char *title = arg_idx + 2 < argc ? argv[arg_idx + 2] : "";
+            const char *due = arg_idx + 3 < argc ? argv[arg_idx + 3] : "";
+            int prio = arg_idx + 4 < argc ? atoi(argv[arg_idx + 4]) : 0;
             int id = storage_tasks_add(title, due, prio);
             if (id) { printf("%d\n", id); return 0; }
             return 1;
@@ -485,8 +539,8 @@ static int run_cli(int argc, char **argv) {
             storage_tasks_list(print_task, NULL);
             return 0;
         }
-        if (strcmp(action, "show") == 0 && argc >= 4) {
-            int id = atoi(argv[3]);
+        if (strcmp(action, "show") == 0 && arg_idx + 2 < argc) {
+            int id = atoi(argv[arg_idx + 2]);
             VibeTask t;
             if (storage_task_get(id, &t)) {
                 printf("id: %d\ntitle: %s\ndue: %s\ndone: %d\npriority: %d\n", t.id, t.title, t.due_date, t.done, t.priority);
@@ -495,8 +549,8 @@ static int run_cli(int argc, char **argv) {
             fprintf(stderr, "Task %d not found\n", id);
             return 1;
         }
-        if (strcmp(action, "delete") == 0 && argc >= 4) {
-            int id = atoi(argv[3]);
+        if (strcmp(action, "delete") == 0 && arg_idx + 2 < argc) {
+            int id = atoi(argv[arg_idx + 2]);
             if (storage_tasks_delete(id)) { printf("ok\n"); return 0; }
             return 1;
         }
@@ -504,9 +558,9 @@ static int run_cli(int argc, char **argv) {
 
     if (strcmp(entity, "contacts") == 0) {
         if (strcmp(action, "add") == 0) {
-            const char *name = argc >= 4 ? argv[3] : "";
-            const char *email = argc >= 5 ? argv[4] : "";
-            const char *phone = argc >= 6 ? argv[5] : "";
+            const char *name = arg_idx + 2 < argc ? argv[arg_idx + 2] : "";
+            const char *email = arg_idx + 3 < argc ? argv[arg_idx + 3] : "";
+            const char *phone = arg_idx + 4 < argc ? argv[arg_idx + 4] : "";
             int id = storage_contacts_add(name, email, phone);
             if (id) { printf("%d\n", id); return 0; }
             return 1;
@@ -519,8 +573,8 @@ static int run_cli(int argc, char **argv) {
             storage_contacts_list(print_contact, NULL);
             return 0;
         }
-        if (strcmp(action, "delete") == 0 && argc >= 4) {
-            int id = atoi(argv[3]);
+        if (strcmp(action, "delete") == 0 && arg_idx + 2 < argc) {
+            int id = atoi(argv[arg_idx + 2]);
             if (storage_contacts_delete(id)) { printf("ok\n"); return 0; }
             return 1;
         }
@@ -528,10 +582,10 @@ static int run_cli(int argc, char **argv) {
 
     if (strcmp(entity, "calendar") == 0) {
         if (strcmp(action, "add") == 0) {
-            const char *title = argc >= 4 ? argv[3] : "";
-            const char *start = argc >= 5 ? argv[4] : "";
-            const char *end = argc >= 6 ? argv[5] : "";
-            int all_day = argc >= 7 ? atoi(argv[6]) : 0;
+            const char *title = arg_idx + 2 < argc ? argv[arg_idx + 2] : "";
+            const char *start = arg_idx + 3 < argc ? argv[arg_idx + 3] : "";
+            const char *end = arg_idx + 4 < argc ? argv[arg_idx + 4] : "";
+            int all_day = arg_idx + 5 < argc ? atoi(argv[arg_idx + 5]) : 0;
             int id = storage_events_add(title, NULL, start, end, all_day);
             if (id) { printf("%d\n", id); return 0; }
             return 1;
@@ -544,8 +598,8 @@ static int run_cli(int argc, char **argv) {
             storage_events_list(print_event, NULL);
             return 0;
         }
-        if (strcmp(action, "delete") == 0 && argc >= 4) {
-            int id = atoi(argv[3]);
+        if (strcmp(action, "delete") == 0 && arg_idx + 2 < argc) {
+            int id = atoi(argv[arg_idx + 2]);
             if (storage_events_delete(id)) { printf("ok\n"); return 0; }
             return 1;
         }
@@ -561,9 +615,9 @@ static int run_cli(int argc, char **argv) {
             storage_trash_list(print_trash, NULL);
             return 0;
         }
-        if (strcmp(action, "restore") == 0 && argc >= 5) {
-            int type = (strcmp(argv[3], "note") == 0) ? 0 : (strcmp(argv[3], "task") == 0) ? 1 : (strcmp(argv[3], "contact") == 0) ? 2 : 3;
-            int id = atoi(argv[4]);
+        if (strcmp(action, "restore") == 0 && arg_idx + 3 < argc) {
+            int type = (strcmp(argv[arg_idx + 2], "note") == 0) ? 0 : (strcmp(argv[arg_idx + 2], "task") == 0) ? 1 : (strcmp(argv[arg_idx + 2], "contact") == 0) ? 2 : 3;
+            int id = atoi(argv[arg_idx + 3]);
             if (storage_restore(type, id)) { printf("ok\n"); return 0; }
             return 1;
         }
@@ -592,6 +646,9 @@ int main(int argc, char **argv) {
     {
         VibeConfig cfg;
         vibe_config_load(&cfg);
+        if (override_data_dir) {
+            snprintf(cfg.data_dir, sizeof(cfg.data_dir), "%s", override_data_dir);
+        }
         storage_init(cfg.data_dir);
         (void)cfg;
     }

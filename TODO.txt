@@ -1,0 +1,8 @@
+# BUGS
+- Nav issues esp on inital load of app
+
+# Steakholder Suggestions
+
+- Jokes
+- Orders/Tickets
+

@@ -9,19 +9,84 @@
 #include <stdlib.h>
 
 static const char *module_names[] = {
-    "Notes", "Tasks", "Contacts", "Calendar", "Facts", "Trash"
+    "Notes", "Tasks", "Contacts", "Calendar", "Facts", "Finances", "Documents", "Trash"
 };
 
-static int get_item_count(int module) {
+/* Trash item storage for restore functionality */
+#define MAX_TRASH_ITEMS 1000
+static struct {
+    int entity_type;
+    int id;
+} trash_items[MAX_TRASH_ITEMS];
+static int trash_items_count = 0;
+static int trash_selected[MAX_TRASH_ITEMS]; /* Checkbox state: 1=selected, 0=not selected */
+static int trash_confirm_mode = 0; /* 1=showing confirmation prompt, 0=normal */
+
+static int count_callback(void *ctx) {
+    int *count = (int *)ctx;
+    (*count)++;
+    return 0;
+}
+
+static int get_item_count_with_filter(int module, const char *search_query) {
+    int count = 0;
+    if (search_query && search_query[0]) {
+        /* Count filtered results */
+        switch (module) {
+            case MODULE_NOTES: {
+                void count_note(const VibeNote *n, void *ctx) { (void)n; count_callback(ctx); }
+                storage_notes_list_filtered(count_note, &count, search_query);
+                return count;
+            }
+            case MODULE_TASKS: {
+                void count_task(const VibeTask *t, void *ctx) { (void)t; count_callback(ctx); }
+                storage_tasks_list_filtered(count_task, &count, search_query);
+                return count;
+            }
+            case MODULE_CONTACTS: {
+                void count_contact(const VibeContact *c, void *ctx) { (void)c; count_callback(ctx); }
+                storage_contacts_list_filtered(count_contact, &count, search_query);
+                return count;
+            }
+            case MODULE_CALENDAR: {
+                void count_event(const VibeCalendarEvent *e, void *ctx) { (void)e; count_callback(ctx); }
+                storage_events_list_filtered(count_event, &count, search_query);
+                return count;
+            }
+            case MODULE_FACTS: {
+                void count_fact(const VibeFact *f, void *ctx) { (void)f; count_callback(ctx); }
+                storage_facts_list_filtered(count_fact, &count, search_query);
+                return count;
+            }
+            case MODULE_FINANCES: {
+                void count_finance(const VibeFinanceEntry *fe, void *ctx) { (void)fe; count_callback(ctx); }
+                storage_finances_list_filtered(count_finance, &count, search_query);
+                return count;
+            }
+            case MODULE_DOCUMENTS: {
+                void count_doc(const VibeDocument *d, void *ctx) { (void)d; count_callback(ctx); }
+                storage_documents_list_filtered(count_doc, &count, search_query);
+                return count;
+            }
+            default: break;
+        }
+    }
+    /* No filter or trash - use normal count */
     switch (module) {
         case MODULE_NOTES:    return storage_notes_count();
         case MODULE_TASKS:    return storage_tasks_count();
         case MODULE_CONTACTS: return storage_contacts_count();
         case MODULE_CALENDAR: return storage_events_count();
         case MODULE_FACTS:    return storage_facts_count();
+        case MODULE_FINANCES: return storage_finances_count();
+        case MODULE_DOCUMENTS: return storage_documents_count();
         case MODULE_TRASH:    return storage_trash_count();
         default: return 0;
     }
+}
+
+static int get_item_count(int module) {
+    return get_item_count_with_filter(module, NULL);
 }
 
 void app_init(AppState *a, int rows, int cols) {
@@ -47,6 +112,9 @@ void app_init(AppState *a, int rows, int cols) {
     a->content_edit_cursor_pos = 0;
     a->content_edit_show_line_numbers = 0;
     a->content_edit_scroll_offset = 0;
+    a->search_mode = 0;
+    a->search_query[0] = '\0';
+    a->search_len = 0;
 }
 
 #define ROW_TITLE   0
@@ -65,32 +133,46 @@ static void draw_title_bar(const AppState *a) {
 }
 
 static void draw_menu_bar(const AppState *a) {
-    (void)a;
     tui_goto(ROW_MENU, 0);
     tui_attr_bold();
-    tui_putstr(" F1 Help  F2 New  F3 Edit  F4 Delete  F10 Quit ");
+    if (a->current_module == MODULE_TRASH) {
+        tui_putstr(" F1 Help | R Restore | Space Toggle | A All | U None | X Delete | F10 Quit ");
+    } else {
+        tui_putstr(" F1 Help | F2 New | F3 Edit | F4 Delete | F5 Search | F10 Quit ");
+    }
     tui_attr_normal();
-    for (int i = 44; i < a->cols; i++) tui_putchar(' ');
+    int len = a->current_module == MODULE_TRASH ? 68 : 58;
+    for (int i = len; i < a->cols; i++) tui_putchar(' ');
 }
 
 static void draw_sidebar(const AppState *a) {
     int top = ROW_CONTENT;
     int bottom = a->rows - 1;
+    int sidebar_width = 18; /* Fixed sidebar width */
     for (int r = top; r < bottom; r++) {
         tui_goto(r, 0);
         if (r == top) {
             tui_putstr(" MODULES");
+            /* Clear rest of line */
+            for (int i = 8; i < sidebar_width; i++) tui_putchar(' ');
         } else if (r >= top + 1 && r < top + 1 + MODULE_COUNT) {
             int i = r - top - 1;
-            if (i == a->current_module && a->focus_sidebar) {
+            int is_selected = (i == a->current_module && a->focus_sidebar);
+            if (is_selected) {
                 tui_attr_reverse();
                 tui_putstr("> ");
             } else {
                 tui_putstr("  ");
             }
             tui_putstr(module_names[i]);
-            if (i == a->current_module && a->focus_sidebar)
+            if (is_selected)
                 tui_attr_normal();
+            /* Clear rest of line */
+            int len = 2 + (int)strlen(module_names[i]);
+            for (int j = len; j < sidebar_width; j++) tui_putchar(' ');
+        } else {
+            /* Clear entire line for rows beyond modules */
+            for (int i = 0; i < sidebar_width; i++) tui_putchar(' ');
         }
     }
 }
@@ -129,10 +211,15 @@ static void fetch_note_at_cb(const VibeNote *n, void *v) {
 }
 
 static void draw_note_card(AppState *a, int main_col, int main_width, int top, int bottom) {
-    int count = get_item_count(MODULE_NOTES);
+    const char *filter_query = a->search_query[0] ? a->search_query : NULL;
+    int count = get_item_count_with_filter(MODULE_NOTES, filter_query);
     if (count == 0) return;
     NoteFetchCtx ctx = {{0}, 0, 0, a->selected_index};
-    storage_notes_list(fetch_note_at_cb, &ctx);
+    if (filter_query) {
+        storage_notes_list_filtered(fetch_note_at_cb, &ctx, filter_query);
+    } else {
+        storage_notes_list(fetch_note_at_cb, &ctx);
+    }
     if (!ctx.found) return;
 
     const VibeNote *n = &ctx.note;
@@ -266,6 +353,66 @@ static void draw_fact_cb(const VibeFact *f, void *v) {
     c->idx++;
 }
 
+static void draw_finance_cb(const VibeFinanceEntry *fe, void *v) {
+    DrawCtx *c = (DrawCtx *)v;
+    if (*c->row >= c->bottom) return;
+    tui_goto(*c->row, c->main_col);
+    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_reverse();
+    char line[256];
+    snprintf(line, sizeof(line), "%3d  %s  $%.2f  %.*s", fe->id, fe->date,
+             fe->amount, c->main_width - 25, fe->description[0] ? fe->description : "(no description)");
+    tui_putstr(line);
+    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_normal();
+    (*c->row)++;
+    c->idx++;
+}
+
+static void draw_document_cb(const VibeDocument *d, void *v) {
+    DrawCtx *c = (DrawCtx *)v;
+    if (*c->row >= c->bottom) return;
+    tui_goto(*c->row, c->main_col);
+    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_reverse();
+    char line[256];
+    snprintf(line, sizeof(line), "%3d  [%s] %.*s", d->id, d->template_name[0] ? d->template_name : "default",
+             c->main_width - 20, d->title[0] ? d->title : "(no title)");
+    tui_putstr(line);
+    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_normal();
+    (*c->row)++;
+    c->idx++;
+}
+
+static void draw_trash_cb(int entity_type, int id, const char *title, void *v) {
+    DrawCtx *c = (DrawCtx *)v;
+    if (*c->row >= c->bottom) return;
+    
+    /* Store trash item for restore */
+    if (c->idx < MAX_TRASH_ITEMS) {
+        trash_items[c->idx].entity_type = entity_type;
+        trash_items[c->idx].id = id;
+    }
+    
+    tui_goto(*c->row, c->main_col);
+    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_reverse();
+    
+    /* Show checkbox */
+    int checked = (c->idx < MAX_TRASH_ITEMS && trash_selected[c->idx]) ? 1 : 0;
+    tui_putchar('[');
+    if (checked) tui_putchar('X');
+    else tui_putchar(' ');
+    tui_putchar(']');
+    tui_putchar(' ');
+    
+    const char *type_names[] = {"Note", "Task", "Contact", "Event", "Fact", "Finance", "Document"};
+    char line[256];
+    snprintf(line, sizeof(line), "[%s] %3d  %.*s", 
+             entity_type >= 0 && entity_type < 7 ? type_names[entity_type] : "?",
+             id, c->main_width - 25, title ? title : "(no title)");
+    tui_putstr(line);
+    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_normal();
+    (*c->row)++;
+    c->idx++;
+}
+
 static void draw_main(AppState *a) {
     int main_col = 18;
     int main_width = a->cols - main_col - 1;
@@ -273,7 +420,8 @@ static void draw_main(AppState *a) {
     int bottom = a->rows - 1;
     if (main_width < 10) main_width = 10;
 
-    int count = get_item_count(a->current_module);
+    const char *filter_query = a->search_query[0] ? a->search_query : NULL;
+    int count = get_item_count_with_filter(a->current_module, filter_query);
     a->item_count = count;
 
     if (a->selected_index >= count && count > 0) a->selected_index = count - 1;
@@ -288,6 +436,11 @@ static void draw_main(AppState *a) {
     snprintf(buf, sizeof(buf), "%d", count);
     tui_putstr(buf);
     tui_putstr(" items)");
+    if (a->search_query[0]) {
+        tui_putstr(" [Filter: ");
+        tui_putstr(a->search_query);
+        tui_putstr("]");
+    }
     tui_attr_normal();
     row++;
 
@@ -295,22 +448,81 @@ static void draw_main(AppState *a) {
 
     if (a->current_module == MODULE_NOTES) {
         if (count > 0) {
+            /* Note card drawing handles filtering internally */
             draw_note_card(a, main_col, main_width, row, bottom);
         }
     } else if (a->current_module == MODULE_TASKS) {
-        storage_tasks_list(draw_task_cb, &dctx);
+        if (filter_query) {
+            storage_tasks_list_filtered(draw_task_cb, &dctx, filter_query);
+        } else {
+            storage_tasks_list(draw_task_cb, &dctx);
+        }
     } else if (a->current_module == MODULE_CONTACTS) {
-        storage_contacts_list(draw_contact_cb, &dctx);
+        if (filter_query) {
+            storage_contacts_list_filtered(draw_contact_cb, &dctx, filter_query);
+        } else {
+            storage_contacts_list(draw_contact_cb, &dctx);
+        }
     } else if (a->current_module == MODULE_CALENDAR) {
-        storage_events_list(draw_event_cb, &dctx);
+        if (filter_query) {
+            storage_events_list_filtered(draw_event_cb, &dctx, filter_query);
+        } else {
+            storage_events_list(draw_event_cb, &dctx);
+        }
     } else if (a->current_module == MODULE_FACTS) {
-        storage_facts_list(draw_fact_cb, &dctx);
+        if (filter_query) {
+            storage_facts_list_filtered(draw_fact_cb, &dctx, filter_query);
+        } else {
+            storage_facts_list(draw_fact_cb, &dctx);
+        }
+    } else if (a->current_module == MODULE_FINANCES) {
+        if (filter_query) {
+            storage_finances_list_filtered(draw_finance_cb, &dctx, filter_query);
+        } else {
+            storage_finances_list(draw_finance_cb, &dctx);
+        }
+    } else if (a->current_module == MODULE_DOCUMENTS) {
+        if (filter_query) {
+            storage_documents_list_filtered(draw_document_cb, &dctx, filter_query);
+        } else {
+            storage_documents_list(draw_document_cb, &dctx);
+        }
     } else if (a->current_module == MODULE_TRASH) {
-        tui_goto(row, main_col);
-        tui_putstr("Trash is empty.");
+        if (count > 0) {
+            /* Don't reset selections - preserve checkbox state */
+            trash_items_count = 0;
+            storage_trash_list(draw_trash_cb, &dctx);
+            trash_items_count = dctx.idx;
+            
+            /* Show confirmation prompt if in confirm mode */
+            if (trash_confirm_mode) {
+                row = bottom - 3;
+                tui_goto(row, main_col);
+                tui_attr_bold();
+                int selected_count = 0;
+                for (int i = 0; i < trash_items_count; i++) {
+                    if (trash_selected[i]) selected_count++;
+                }
+                tui_putstr("PERMANENTLY DELETE ");
+                char buf[32];
+                snprintf(buf, sizeof(buf), "%d", selected_count);
+                tui_putstr(buf);
+                tui_putstr(" SELECTED ITEM(S)?");
+                tui_attr_normal();
+                row++;
+                tui_goto(row, main_col);
+                tui_putstr("Press Y to confirm, N or Esc to cancel");
+            }
+        } else {
+            tui_goto(row, main_col);
+            tui_putstr("Trash is empty.");
+            trash_items_count = 0;
+            trash_confirm_mode = 0;
+        }
     }
 
-    if (count == 0 && a->current_module != MODULE_TRASH && a->current_module != MODULE_FACTS) {
+    if (count == 0 && a->current_module != MODULE_TRASH && a->current_module != MODULE_FACTS && 
+        a->current_module != MODULE_FINANCES && a->current_module != MODULE_DOCUMENTS) {
         tui_goto(row, main_col);
         tui_putstr("(No items. Press F2 or N to add.)");
     }
@@ -330,6 +542,10 @@ static void draw_status_bar(const AppState *a) {
         state = "ContentEditing";
     } else if (a->prompt_mode) {
         state = a->prompt_is_edit ? "Editing" : "Adding";
+    } else if (a->search_mode) {
+        state = "Searching";
+    } else if (a->search_query[0]) {
+        state = "Filtered";
     } else {
         state = "View";
     }
@@ -365,7 +581,46 @@ static void draw_prompt(const AppState *a) {
     tui_attr_reverse();
     tui_putstr(a->prompt_label);
     tui_putstr(a->prompt_buf);
-    for (int i = (int)strlen(a->prompt_label) + a->prompt_len; i < a->cols; i++)
+    /* Show blinking cursor - toggle based on a simple counter */
+    static int cursor_frame = 0;
+    cursor_frame++;
+    if ((cursor_frame / 10) % 2 == 0) {
+        /* Show cursor */
+        tui_attr_normal();
+        tui_attr_reverse();
+        tui_putchar('_');
+        tui_attr_normal();
+        tui_attr_reverse();
+    } else {
+        /* Hide cursor (blink off) */
+        tui_putchar(' ');
+    }
+    for (int i = (int)strlen(a->prompt_label) + a->prompt_len + 1; i < a->cols; i++)
+        tui_putchar(' ');
+    tui_attr_normal();
+}
+
+static void draw_search_prompt(const AppState *a) {
+    int row = a->rows - 1;
+    tui_goto(row, 0);
+    tui_attr_reverse();
+    tui_putstr(" Search: ");
+    tui_putstr(a->search_query);
+    /* Show blinking cursor - toggle based on a simple counter */
+    static int search_cursor_frame = 0;
+    search_cursor_frame++;
+    if ((search_cursor_frame / 10) % 2 == 0) {
+        /* Show cursor */
+        tui_attr_normal();
+        tui_attr_reverse();
+        tui_putchar('_');
+        tui_attr_normal();
+        tui_attr_reverse();
+    } else {
+        /* Hide cursor (blink off) */
+        tui_putchar(' ');
+    }
+    for (int i = 9 + a->search_len + 1; i < a->cols; i++)
         tui_putchar(' ');
     tui_attr_normal();
 }
@@ -587,6 +842,7 @@ static const char *help_text[] = {
     "  F2 or N        New item",
     "  F3 or E        Edit selected",
     "  F4 or D        Delete selected",
+    "  F5 or /        Search/Filter items",
     "  F1 or ?        This help",
     "  F10 or q       Quit",
     "",
@@ -651,6 +907,16 @@ static void find_fact_cb(const VibeFact *f, void *v) {
     if (c->idx == c->selected) { c->id = f->id; c->found = 1; }
     c->idx++;
 }
+static void find_finance_cb(const VibeFinanceEntry *fe, void *v) {
+    FindCtx *c = (FindCtx *)v;
+    if (c->idx == c->selected) { c->id = fe->id; c->found = 1; }
+    c->idx++;
+}
+static void find_document_cb(const VibeDocument *d, void *v) {
+    FindCtx *c = (FindCtx *)v;
+    if (c->idx == c->selected) { c->id = d->id; c->found = 1; }
+    c->idx++;
+}
 
 static int get_selected_id(const AppState *a) {
     int count = get_item_count(a->current_module);
@@ -666,6 +932,10 @@ static int get_selected_id(const AppState *a) {
         storage_events_list(find_event_cb, &ctx);
     else if (a->current_module == MODULE_FACTS)
         storage_facts_list(find_fact_cb, &ctx);
+    else if (a->current_module == MODULE_FINANCES)
+        storage_finances_list(find_finance_cb, &ctx);
+    else if (a->current_module == MODULE_DOCUMENTS)
+        storage_documents_list(find_document_cb, &ctx);
     return ctx.found ? ctx.id : 0;
 }
 
@@ -683,6 +953,8 @@ static int start_new_prompt(AppState *a) {
         case MODULE_CONTACTS: snprintf(a->prompt_label, sizeof(a->prompt_label), " Name: "); break;
         case MODULE_CALENDAR: snprintf(a->prompt_label, sizeof(a->prompt_label), " Title: "); break;
         case MODULE_FACTS:    snprintf(a->prompt_label, sizeof(a->prompt_label), " Key: "); break;
+        case MODULE_FINANCES: snprintf(a->prompt_label, sizeof(a->prompt_label), " Date (YYYY-MM-DD): "); break;
+        case MODULE_DOCUMENTS: snprintf(a->prompt_label, sizeof(a->prompt_label), " Title: "); break;
         default: a->prompt_mode = 0; return 0;
     }
     return 1;
@@ -769,10 +1041,60 @@ static void finish_new_step(AppState *a) {
             snprintf(a->prompt_label, sizeof(a->prompt_label), " Value: ");
             return;
         }
-        int id = storage_facts_add(a->prompt_data[0], a->prompt_buf);
+        int id = storage_facts_add(a->prompt_data[0], a->prompt_data[1]);
         a->prompt_mode = 0;
         snprintf(a->message, sizeof(a->message), "Fact %d added.", id);
         a->selected_index = get_item_count(MODULE_FACTS) - 1;
+        return;
+    }
+    if (a->current_module == MODULE_FINANCES) {
+        if (a->prompt_step == 0) {
+            a->prompt_step = 1;
+            snprintf(a->prompt_label, sizeof(a->prompt_label), " Description: ");
+            return;
+        }
+        if (a->prompt_step == 1) {
+            a->prompt_step = 2;
+            snprintf(a->prompt_label, sizeof(a->prompt_label), " Amount: ");
+            return;
+        }
+        if (a->prompt_step == 2) {
+            a->prompt_step = 3;
+            snprintf(a->prompt_label, sizeof(a->prompt_label), " Category: ");
+            return;
+        }
+        if (a->prompt_step == 3) {
+            a->prompt_step = 4;
+            snprintf(a->prompt_label, sizeof(a->prompt_label), " Account: ");
+            return;
+        }
+        double amount = atof(a->prompt_data[2]);
+        int id = storage_finances_add(a->prompt_data[0], a->prompt_data[1], amount, a->prompt_data[3], a->prompt_data[4], "");
+        a->prompt_mode = 0;
+        snprintf(a->message, sizeof(a->message), "Finance entry %d added.", id);
+        a->selected_index = get_item_count(MODULE_FINANCES) - 1;
+        return;
+    }
+    if (a->current_module == MODULE_DOCUMENTS) {
+        if (a->prompt_step == 0) {
+            a->prompt_step = 1;
+            snprintf(a->prompt_label, sizeof(a->prompt_label), " Template: ");
+            return;
+        }
+        if (a->prompt_step == 1) {
+            a->prompt_step = 2;
+            a->content_edit_mode = 1;
+            a->content_edit_buf[0] = '\0';
+            a->content_edit_len = 0;
+            a->content_edit_cursor_pos = 0;
+            a->content_edit_scroll_offset = 0;
+            return;
+        }
+        int id = storage_documents_add(a->prompt_data[0], a->prompt_data[1], a->content_edit_buf);
+        a->prompt_mode = 0;
+        a->content_edit_mode = 0;
+        snprintf(a->message, sizeof(a->message), "Document %d added.", id);
+        a->selected_index = get_item_count(MODULE_DOCUMENTS) - 1;
         return;
     }
     a->prompt_mode = 0;
@@ -805,6 +1127,7 @@ static int start_edit_prompt(AppState *a) {
         a->prompt_len = (int)strlen(a->prompt_buf);
         snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%s", t.due_date);
         snprintf(a->prompt_data[2], sizeof(a->prompt_data[2]), "%d", t.priority);
+        snprintf(a->prompt_data[3], sizeof(a->prompt_data[3]), "%d", t.done); /* Store done status */
         return 1;
     }
     if (a->current_module == MODULE_CONTACTS) {
@@ -840,6 +1163,32 @@ static int start_edit_prompt(AppState *a) {
         snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", f.key);
         a->prompt_len = (int)strlen(a->prompt_buf);
         snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%s", f.value);
+        return 1;
+    }
+    if (a->current_module == MODULE_FINANCES) {
+        VibeFinanceEntry fe;
+        if (!storage_finance_get(id, &fe)) return 0;
+        a->prompt_mode = 1;
+        a->prompt_step = 0;
+        snprintf(a->prompt_label, sizeof(a->prompt_label), " Date (YYYY-MM-DD): ");
+        snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", fe.date);
+        a->prompt_len = (int)strlen(a->prompt_buf);
+        snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%s", fe.description);
+        snprintf(a->prompt_data[2], sizeof(a->prompt_data[2]), "%.2f", fe.amount);
+        snprintf(a->prompt_data[3], sizeof(a->prompt_data[3]), "%s", fe.category);
+        snprintf(a->prompt_data[4], sizeof(a->prompt_data[4]), "%s", fe.account);
+        return 1;
+    }
+    if (a->current_module == MODULE_DOCUMENTS) {
+        VibeDocument d;
+        if (!storage_document_get(id, &d)) return 0;
+        a->prompt_mode = 1;
+        a->prompt_step = 0;
+        snprintf(a->prompt_label, sizeof(a->prompt_label), " Title: ");
+        snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", d.title);
+        a->prompt_len = (int)strlen(a->prompt_buf);
+        snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%s", d.template_name);
+        snprintf(a->prompt_data[2], sizeof(a->prompt_data[2]), "%.255s", d.content);
         return 1;
     }
     return 0;
@@ -885,13 +1234,23 @@ static void finish_edit_step(AppState *a) {
         }
         if (a->prompt_step == 1) {
             a->prompt_step = 2;
-            snprintf(a->prompt_label, sizeof(a->prompt_label), " Priority: ");
+            snprintf(a->prompt_label, sizeof(a->prompt_label), " Priority (0-3): ");
             snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", a->prompt_data[2]);
             a->prompt_len = (int)strlen(a->prompt_buf);
             return;
         }
-        int prio = atoi(a->prompt_buf);
-        storage_tasks_update(id, a->prompt_data[0], a->prompt_data[1], prio, 0);
+        if (a->prompt_step == 2) {
+            a->prompt_step = 3;
+            snprintf(a->prompt_label, sizeof(a->prompt_label), " Done (0=no, 1=yes): ");
+            snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", a->prompt_data[3]);
+            a->prompt_len = (int)strlen(a->prompt_buf);
+            return;
+        }
+        int prio = atoi(a->prompt_data[2]);
+        if (prio < 0 || prio > 3) prio = 0;
+        int done = atoi(a->prompt_buf);
+        if (done != 0 && done != 1) done = 0;
+        storage_tasks_update(id, a->prompt_data[0], a->prompt_data[1], prio, done);
         a->prompt_mode = 0;
         snprintf(a->message, sizeof(a->message), "Task updated.");
         return;
@@ -949,6 +1308,72 @@ static void finish_edit_step(AppState *a) {
         snprintf(a->message, sizeof(a->message), "Fact updated.");
         return;
     }
+    if (a->current_module == MODULE_FINANCES) {
+        if (a->prompt_step == 0) {
+            a->prompt_step = 1;
+            snprintf(a->prompt_label, sizeof(a->prompt_label), " Description: ");
+            snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", a->prompt_data[1]);
+            a->prompt_len = (int)strlen(a->prompt_buf);
+            return;
+        }
+        if (a->prompt_step == 1) {
+            a->prompt_step = 2;
+            snprintf(a->prompt_label, sizeof(a->prompt_label), " Amount: ");
+            snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", a->prompt_data[2]);
+            a->prompt_len = (int)strlen(a->prompt_buf);
+            return;
+        }
+        if (a->prompt_step == 2) {
+            a->prompt_step = 3;
+            snprintf(a->prompt_label, sizeof(a->prompt_label), " Category: ");
+            snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", a->prompt_data[3]);
+            a->prompt_len = (int)strlen(a->prompt_buf);
+            return;
+        }
+        if (a->prompt_step == 3) {
+            a->prompt_step = 4;
+            snprintf(a->prompt_label, sizeof(a->prompt_label), " Account: ");
+            snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", a->prompt_data[4]);
+            a->prompt_len = (int)strlen(a->prompt_buf);
+            return;
+        }
+        double amount = atof(a->prompt_data[2]);
+        storage_finances_update(id, a->prompt_data[0], a->prompt_data[1], amount, a->prompt_data[3], a->prompt_data[4], "");
+        a->prompt_mode = 0;
+        snprintf(a->message, sizeof(a->message), "Finance entry updated.");
+        return;
+    }
+    if (a->current_module == MODULE_DOCUMENTS) {
+        if (a->prompt_step == 0) {
+            a->prompt_step = 1;
+            snprintf(a->prompt_label, sizeof(a->prompt_label), " Template: ");
+            snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", a->prompt_data[1]);
+            a->prompt_len = (int)strlen(a->prompt_buf);
+            return;
+        }
+        if (a->prompt_step == 1) {
+            a->prompt_step = 2;
+            a->content_edit_mode = 1;
+            if (a->prompt_is_edit) {
+                VibeDocument d;
+                if (storage_document_get(id, &d))
+                    snprintf(a->content_edit_buf, sizeof(a->content_edit_buf), "%.4095s", d.content);
+                else
+                    a->content_edit_buf[0] = '\0';
+            } else {
+                a->content_edit_buf[0] = '\0';
+            }
+            a->content_edit_len = (int)strlen(a->content_edit_buf);
+            a->content_edit_cursor_pos = a->content_edit_len;
+            a->content_edit_scroll_offset = 0;
+            return;
+        }
+        storage_documents_update(id, a->prompt_data[0], a->prompt_data[1], a->content_edit_buf);
+        a->prompt_mode = 0;
+        a->content_edit_mode = 0;
+        snprintf(a->message, sizeof(a->message), "Document updated.");
+        return;
+    }
     a->prompt_mode = 0;
 }
 
@@ -962,6 +1387,8 @@ static int do_delete(AppState *a) {
         case MODULE_CONTACTS: storage_contacts_delete(id); break;
         case MODULE_CALENDAR: storage_events_delete(id); break;
         case MODULE_FACTS:    storage_facts_delete(id); break;
+        case MODULE_FINANCES: storage_finances_delete(id); break;
+        case MODULE_DOCUMENTS: storage_documents_delete(id); break;
         default: return 0;
     }
     if (a->selected_index >= get_item_count(a->current_module) && a->selected_index > 0)
@@ -1213,6 +1640,44 @@ void app_handle_key(AppState *a, int key) {
         return;
     }
 
+    if (a->search_mode) {
+        if (key == KEY_ESC) {
+            /* Cancel search - clear filter */
+            a->search_mode = 0;
+            a->search_query[0] = '\0';
+            a->search_len = 0;
+            a->selected_index = 0;
+            a->message[0] = '\0';
+            return;
+        }
+        if (key == KEY_ENTER || key == '\n' || key == '\r') {
+            /* Apply search filter - exit search input but keep filter active */
+            a->search_mode = 0;
+            a->selected_index = 0;
+            if (a->search_query[0]) {
+                snprintf(a->message, sizeof(a->message), "Filter active. Press F5 to clear.");
+            } else {
+                snprintf(a->message, sizeof(a->message), "Filter cleared.");
+            }
+            return;
+        }
+        if (key == KEY_BACKSPACE || key == 0x08) {
+            if (a->search_len > 0) {
+                a->search_len--;
+                a->search_query[a->search_len] = '\0';
+                a->selected_index = 0; /* Reset selection when search changes */
+            }
+            return;
+        }
+        if (key >= 32 && key < 127 && a->search_len < 255) {
+            a->search_query[a->search_len++] = (char)key;
+            a->search_query[a->search_len] = '\0';
+            a->selected_index = 0; /* Reset selection when search changes */
+            return;
+        }
+        return;
+    }
+
     if (a->prompt_mode) {
         if (key == KEY_ESC) {
             a->prompt_mode = 0;
@@ -1261,12 +1726,117 @@ void app_handle_key(AppState *a, int key) {
         do_delete(a);
         return;
     }
+    if (key == KEY_F(5) || c == '/') {
+        /* Toggle search mode or clear filter */
+        if (a->current_module != MODULE_TRASH) {
+            if (a->search_query[0] && !a->search_mode) {
+                /* Filter is active but not in search input mode - clear it */
+                a->search_query[0] = '\0';
+                a->search_len = 0;
+                a->selected_index = 0;
+                snprintf(a->message, sizeof(a->message), "Filter cleared.");
+            } else {
+                /* Start search mode */
+                a->search_mode = 1;
+                a->selected_index = 0;
+                /* Keep existing query if there is one, user can edit it */
+            }
+        }
+        return;
+    }
+    /* Trash module special handlers */
+    if (a->current_module == MODULE_TRASH && !a->focus_sidebar) {
+        /* Handle confirmation mode */
+        if (trash_confirm_mode) {
+            if (c == 'y' || c == 'Y' || key == KEY_ENTER || key == '\n' || key == '\r') {
+                /* Confirm deletion */
+                int deleted = 0;
+                /* Delete selected items */
+                for (int i = trash_items_count - 1; i >= 0; i--) {
+                    if (trash_selected[i]) {
+                        if (storage_permanent_delete(trash_items[i].entity_type, trash_items[i].id)) {
+                            deleted++;
+                        }
+                    }
+                }
+                snprintf(a->message, sizeof(a->message), "Deleted %d item(s) permanently.", deleted);
+                trash_confirm_mode = 0;
+                memset(trash_selected, 0, sizeof(trash_selected));
+                return;
+            } else if (c == 'n' || c == 'N' || key == KEY_ESC) {
+                /* Cancel */
+                trash_confirm_mode = 0;
+                snprintf(a->message, sizeof(a->message), "Cancelled.");
+                return;
+            }
+            return; /* Ignore other keys in confirm mode */
+        }
+        
+        /* Normal trash mode handlers */
+        if ((c == 'r' || c == 'R') && !trash_confirm_mode) {
+            if (a->selected_index >= 0 && a->selected_index < trash_items_count) {
+                int entity_type = trash_items[a->selected_index].entity_type;
+                int id = trash_items[a->selected_index].id;
+                if (storage_restore(entity_type, id)) {
+                    snprintf(a->message, sizeof(a->message), "Restored.");
+                    if (a->selected_index >= get_item_count(MODULE_TRASH) && a->selected_index > 0)
+                        a->selected_index--;
+                } else {
+                    snprintf(a->message, sizeof(a->message), "Restore failed.");
+                }
+            }
+            return;
+        }
+        
+        if (key == ' ' && !trash_confirm_mode) {
+            /* Toggle checkbox */
+            if (a->selected_index >= 0 && a->selected_index < trash_items_count) {
+                trash_selected[a->selected_index] = !trash_selected[a->selected_index];
+            }
+            return;
+        }
+        
+        if ((c == 'a' || c == 'A') && !trash_confirm_mode) {
+            /* Select all */
+            for (int i = 0; i < trash_items_count; i++) {
+                trash_selected[i] = 1;
+            }
+            snprintf(a->message, sizeof(a->message), "All items selected.");
+            return;
+        }
+        
+        if ((c == 'u' || c == 'U') && !trash_confirm_mode) {
+            /* Unselect all */
+            memset(trash_selected, 0, sizeof(trash_selected));
+            snprintf(a->message, sizeof(a->message), "All items unselected.");
+            return;
+        }
+        
+        if ((c == 'x' || c == 'X') && !trash_confirm_mode) {
+            /* Delete selected - show confirmation */
+            int selected_count = 0;
+            for (int i = 0; i < trash_items_count; i++) {
+                if (trash_selected[i]) selected_count++;
+            }
+            if (selected_count > 0) {
+                trash_confirm_mode = 1;
+            } else {
+                snprintf(a->message, sizeof(a->message), "No items selected.");
+            }
+            return;
+        }
+        
+    }
 
     if (a->focus_sidebar) {
         if (key == KEY_UP || key == 'k') {
             if (a->current_module > 0) {
                 a->current_module--;
                 a->selected_index = 0;
+                if (a->current_module == MODULE_TRASH) {
+                    memset(trash_selected, 0, sizeof(trash_selected));
+                    trash_confirm_mode = 0;
+                }
                 if (a->current_module == MODULE_NOTES && get_item_count(MODULE_NOTES) > 0)
                     a->focus_sidebar = 0;
             }
@@ -1276,6 +1846,10 @@ void app_handle_key(AppState *a, int key) {
             if (a->current_module < MODULE_COUNT - 1) {
                 a->current_module++;
                 a->selected_index = 0;
+                if (a->current_module == MODULE_TRASH) {
+                    memset(trash_selected, 0, sizeof(trash_selected));
+                    trash_confirm_mode = 0;
+                }
                 if (a->current_module == MODULE_NOTES && get_item_count(MODULE_NOTES) > 0)
                     a->focus_sidebar = 0;
             }
@@ -1305,6 +1879,19 @@ void app_handle_key(AppState *a, int key) {
             start_edit_prompt(a);
             return;
         }
+        if (key == ' ' && a->current_module == MODULE_TASKS && !a->prompt_mode && !a->search_mode && !a->content_edit_mode) {
+            /* Toggle task completion */
+            int id = get_selected_id(a);
+            if (id > 0) {
+                VibeTask t;
+                if (storage_task_get(id, &t)) {
+                    int new_done = !t.done;
+                    storage_tasks_update(id, t.title, t.due_date, t.priority, new_done);
+                    snprintf(a->message, sizeof(a->message), new_done ? "Task marked complete." : "Task marked incomplete.");
+                }
+            }
+            return;
+        }
         a->message[0] = '\0';
     }
 }
@@ -1326,10 +1913,13 @@ void app_draw(AppState *a) {
     } else {
         draw_sidebar(a);
         draw_main(a);
-        if (a->prompt_mode)
+        if (a->search_mode) {
+            draw_search_prompt(a);
+        } else if (a->prompt_mode) {
             draw_prompt(a);
-        else
+        } else {
             draw_status_bar(a);
+        }
     }
     tui_refresh();
 }

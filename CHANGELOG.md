@@ -12,16 +12,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **1980s-style TUI**: Curses (ncurses on Linux, PDCurses on DOS). Menu bar (F1–F4, F10), status line, F-keys for actions.
+- **Configuration management**: `--config` option prints current configuration (data directory, database path, environment variables). `--data-dir DIR` option allows overriding the default data directory for all operations (TUI, CLI, interactive command mode).
+
+- **1980s-style TUI**: Curses (ncurses on Linux, PDCurses on DOS). Menu bar (F1–F5, F10), status line, F-keys for actions.
 - **Note cards**: Notes display as Title + Content; Up/Down navigate between them.
 - **Multi-line content editor**: Note body uses bordered text area with cursor, line numbers (F5), and scrolling (Page Up/Down). Enter=newline, Enter+Enter=save, Esc=cancel. Arrow keys move cursor responsively.
 - **FACTS module**: New module for key-value pairs (e.g. "Andrew SSN = 455-56-2022"). Full CRUD support with `facts add <key> <value>`, `list`, `edit`, `delete` commands.
+- **FINANCES module**: General ledger module (stub) for tracking financial transactions.
+- **DOCUMENTS module**: Templated forms module (stub) for document management.
+- **Search/Filter functionality**: Press F5 or / to search/filter items in all modules. Case-insensitive substring matching. Filter persists after Enter; press F5 again to clear. Real-time filtering as you type.
+- **Trash management**: Enhanced trash module with checkbox selection, select all/none, restore, and permanent delete with confirmation prompts.
+- **Blinking cursor**: Status bar shows blinking cursor (`_`) when in text input mode (prompts and search) to indicate where to type.
 - **TUI test framework**: `make test_tui` builds automated UI tests (`tests/test_tui.c`) that simulate key presses and verify UI behavior.
-- **Unit tests**: `make test` runs app (UI state, key handling, content editor) and storage tests. CLI integration: `--foo` prints "unknown argument", exits 1.
+- **Unit tests**: `make test` runs app (UI state, key handling, content editor) and storage tests, including trash integration tests. CLI integration: `--foo` prints "unknown argument", exits 1.
 - **Make targets**: `make clean all` and `make rebuild` remove all binaries and object files before rebuilding. Linux targets use ncurses by default.
 - **Display size flags**: `--display small` (80x25), `--display auto` (dynamic terminal size), `--display custom COLxROW` (e.g. `--display custom 120x30`).
 - **REPL improvements**: Prompt changed from `"vibe> "` to `"> "`. Added `list` command to show all records (Notes, Tasks, Contacts, Calendar, Facts) in formatted tables.
-- **Status bar**: Shows current UI context (e.g. `:Notes=>View`, `:Notes=>ContentEditing`, `:Facts=>Adding`).
+- **Status bar**: Shows current UI context (e.g. `:Notes=>View`, `:Notes=>ContentEditing`, `:Facts=>Adding`, `:Notes=>Filtered`).
 
 ### Changed
 

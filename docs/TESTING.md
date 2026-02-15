@@ -17,12 +17,16 @@ This builds `run_tests` and runs it. Exit code 0 means all tests passed.
 ### What is tested
 
 - **App (UI/UX)**  
-  - `app_init()` sets initial state (module 0, sidebar focus, no menu, no prompt, no content editor).  
-  - `app_handle_key()`: module switch (Up/Down in sidebar), focus (Tab/Shift+Tab), quit (q, F10), help (F1, ?), and CRUD hotkeys (F2/N new, F3/E edit, F4/D delete) produce the expected `AppState` (e.g. `current_module`, `focus_sidebar`, `quit_requested`, `prompt_mode`, `content_edit_mode`).  
+  - `app_init()` sets initial state (module 0, sidebar focus, no menu, no prompt, no content editor, no search).  
+  - `app_handle_key()`: module switch (Up/Down in sidebar), focus (Tab/Shift+Tab), quit (q, F10), help (F1, ?), CRUD hotkeys (F2/N new, F3/E edit, F4/D delete), and search (F5/).  
   - Content editor: F2 in Notes → enter title → Enter advances to `content_edit_mode`; Esc cancels and clears `content_edit_mode`.
+  - Search mode: F5 starts search, Enter applies filter, F5 again clears filter.
+  - Trash module: F2/N disabled, restore (R), checkbox toggle (Space), select all/none (A/U), delete (X).
 
 - **Storage (backend)**  
   - `storage_init()` and counts: init in a temp dir, counts return 0 when empty. Then (unless disabled) the test seeds **dummy data** and asserts counts. See **Dummy data** below.
+  - Trash functionality: soft-delete, trash listing, restore, permanent delete, empty trash.
+  - Search/Filter: Filtered list functions for all modules with case-insensitive substring matching.
 
 - **CLI (integration)**  
   - `./vibePDA --foo` prints "unknown argument" to stderr and exits with code 1.
@@ -56,10 +60,12 @@ VIBE_TEST_SEED=42 VIBE_TEST_RECORDS=100 make test
 
 ## Interaction (1980s-style TUI)
 
-- **F-keys**: F1 Help, F2 New, F3 Edit, F4 Delete, F10 Quit. Shortcuts: n/t/c/a/x switch module; q quit; ? help.
+- **F-keys**: F1 Help, F2 New, F3 Edit, F4 Delete, F5 Search, F10 Quit. Shortcuts: n/t/c/a/x switch module; q quit; ? help; / search.
 - **Navigation**: Up/Down in sidebar switch modules; Up/Down in main pane move selection; Tab/Shift+Tab switch focus between sidebar and main.
+- **Search/Filter**: F5 or / starts search; type query to filter in real-time; Enter applies filter; F5 again clears filter.
 - **Note cards**: Notes display as cards (Title + Content). Select a note to view its content in the main pane.
 - **Content editor**: When adding/editing a note body, a bordered multi-line text area appears with cursor, line numbers (F5), and scrolling (Page Up/Down). Enter inserts newline; Enter+Enter (two blank lines) saves; Esc cancels and exits content editor. Arrow keys move cursor; cursor automatically scrolls into view.
+- **Trash management**: Checkbox selection (Space), select all (A), unselect all (U), restore (R), permanent delete (X with confirmation).
 
 Manual test: run `./vibePDA`, press F2 (New), type a title, Enter, type content, press Enter twice to save. Press Esc to cancel if needed.
 

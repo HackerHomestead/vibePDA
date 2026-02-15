@@ -28,6 +28,27 @@ static void sanitize(char *dst, const char *src, int max) {
     dst[j] = '\0';
 }
 
+/* Case-insensitive substring match */
+static int str_contains_ci(const char *haystack, const char *needle) {
+    if (!haystack || !needle || !*needle) return 1; /* Empty query matches all */
+    const char *h = haystack;
+    const char *n = needle;
+    while (*h) {
+        const char *h_start = h;
+        const char *n_start = n;
+        while (*h && *n && 
+               ((*h >= 'A' && *h <= 'Z' ? *h + 32 : *h) == 
+                (*n >= 'A' && *n <= 'Z' ? *n + 32 : *n))) {
+            h++;
+            n++;
+        }
+        if (!*n) return 1; /* Found match */
+        h = h_start + 1;
+        n = n_start;
+    }
+    return 0; /* No match */
+}
+
 static void timestamp(char *buf, int size) {
     time_t t = time(NULL);
     struct tm *tm = localtime(&t);
@@ -744,6 +765,825 @@ int storage_facts_delete(int id) {
     return facts_rewrite(id, 1, NULL, NULL);
 }
 
-int storage_trash_count(void) { return 0; }
-void storage_trash_list(void (*cb)(int entity_type, int id, const char *title, void *), void *ctx) { (void)cb;(void)ctx; }
-int storage_restore(int entity_type, int id) { (void)entity_type;(void)id; return 0; }
+/* Trash: count deleted items across all entity types */
+int storage_trash_count(void) {
+    int count = 0;
+    
+    /* Notes */
+    char path[DATA_DIR_MAX + 64];
+    data_path(path, sizeof(path), "notes.txt");
+    FILE *f = fopen(path, "r");
+    if (f) {
+        char line[LINE_MAX];
+        while (fgets(line, sizeof(line), f)) {
+            char *p = line;
+            int tabs = 0;
+            while (*p) { if (*p == '\t') tabs++; p++; }
+            if (tabs < 4) continue;
+            p = line + strlen(line) - 1;
+            while (p > line && (*p == '\n' || *p == '\r')) p--;
+            if (p > line && *p != '\t' && *p != ' ') count++;
+        }
+        fclose(f);
+    }
+    
+    /* Tasks */
+    data_path(path, sizeof(path), "tasks.txt");
+    f = fopen(path, "r");
+    if (f) {
+        char line[LINE_MAX];
+        while (fgets(line, sizeof(line), f)) {
+            int id;
+            if (sscanf(line, "%d", &id) != 1) continue;
+            char *last = line + strlen(line) - 1;
+            while (last > line && (*last == '\n' || *last == '\r')) last--;
+            if (last > line && *last != '\t') count++;
+        }
+        fclose(f);
+    }
+    
+    /* Contacts */
+    data_path(path, sizeof(path), "contacts.txt");
+    f = fopen(path, "r");
+    if (f) {
+        char line[LINE_MAX];
+        while (fgets(line, sizeof(line), f)) {
+            int id;
+            if (sscanf(line, "%d", &id) != 1) continue;
+            char *last = line + strlen(line) - 1;
+            while (last > line && (*last == '\n' || *last == '\r')) last--;
+            if (last > line && *last != '\t') count++;
+        }
+        fclose(f);
+    }
+    
+    /* Events */
+    data_path(path, sizeof(path), "events.txt");
+    f = fopen(path, "r");
+    if (f) {
+        char line[LINE_MAX];
+        while (fgets(line, sizeof(line), f)) {
+            int id;
+            if (sscanf(line, "%d", &id) != 1) continue;
+            char *last = line + strlen(line) - 1;
+            while (last > line && (*last == '\n' || *last == '\r')) last--;
+            if (last > line && *last != '\t') count++;
+        }
+        fclose(f);
+    }
+    
+    /* Facts */
+    data_path(path, sizeof(path), "facts.txt");
+    f = fopen(path, "r");
+    if (f) {
+        char line[LINE_MAX];
+        while (fgets(line, sizeof(line), f)) {
+            char *p = line;
+            int tabs = 0;
+            while (*p) { if (*p == '\t') tabs++; p++; }
+            if (tabs < 4) continue;
+            p = line + strlen(line) - 1;
+            while (p > line && (*p == '\n' || *p == '\r')) p--;
+            if (p > line && *p != '\t' && *p != ' ') count++;
+        }
+        fclose(f);
+    }
+    
+    return count;
+}
+
+/* Trash: list deleted items from all entity types */
+void storage_trash_list(void (*cb)(int entity_type, int id, const char *title, void *), void *ctx) {
+    if (!cb) return;
+    
+    /* Notes (entity_type 0) */
+    char path[DATA_DIR_MAX + 64];
+    data_path(path, sizeof(path), "notes.txt");
+    FILE *f = fopen(path, "r");
+    if (f) {
+        char line[LINE_MAX];
+        while (fgets(line, sizeof(line), f)) {
+            int id = 0;
+            char *p = line;
+            char *q = strchr(p, '\t');
+            if (!q) continue;
+            *q = '\0'; id = atoi(p); *q = '\t'; p = q + 1;
+            q = strchr(p, '\t');
+            if (!q) continue;
+            *q = '\0';
+            char title[VIBE_TITLE_MAX];
+            snprintf(title, sizeof(title), "%s", p);
+            *q = '\t'; p = q + 1;
+            /* Skip content and created_at */
+            for (int i = 0; i < 2 && p; i++) {
+                q = strchr(p, '\t');
+                if (!q) break;
+                p = q + 1;
+            }
+            if (!p) continue;
+            /* Check if deleted_at is non-empty */
+            char *end = line + strlen(line) - 1;
+            while (end > p && (*end == '\n' || *end == '\r')) end--;
+            if (end > p && *end != '\t' && *end != ' ') {
+                cb(0, id, title, ctx);
+            }
+        }
+        fclose(f);
+    }
+    
+    /* Tasks (entity_type 1) */
+    data_path(path, sizeof(path), "tasks.txt");
+    f = fopen(path, "r");
+    if (f) {
+        char line[LINE_MAX];
+        while (fgets(line, sizeof(line), f)) {
+            int id;
+            char title[VIBE_TITLE_MAX];
+            if (sscanf(line, "%d\t%255[^\t]", &id, title) != 2) continue;
+            char *last = line + strlen(line) - 1;
+            while (last > line && (*last == '\n' || *last == '\r')) last--;
+            if (last > line && *last != '\t') {
+                cb(1, id, title, ctx);
+            }
+        }
+        fclose(f);
+    }
+    
+    /* Contacts (entity_type 2) */
+    data_path(path, sizeof(path), "contacts.txt");
+    f = fopen(path, "r");
+    if (f) {
+        char line[LINE_MAX];
+        while (fgets(line, sizeof(line), f)) {
+            int id;
+            char name[VIBE_NAME_MAX];
+            if (sscanf(line, "%d\t%255[^\t]", &id, name) != 2) continue;
+            char *last = line + strlen(line) - 1;
+            while (last > line && (*last == '\n' || *last == '\r')) last--;
+            if (last > line && *last != '\t') {
+                cb(2, id, name, ctx);
+            }
+        }
+        fclose(f);
+    }
+    
+    /* Events (entity_type 3) */
+    data_path(path, sizeof(path), "events.txt");
+    f = fopen(path, "r");
+    if (f) {
+        char line[LINE_MAX];
+        while (fgets(line, sizeof(line), f)) {
+            int id;
+            char title[VIBE_TITLE_MAX];
+            if (sscanf(line, "%d\t%255[^\t]", &id, title) != 2) continue;
+            char *last = line + strlen(line) - 1;
+            while (last > line && (*last == '\n' || *last == '\r')) last--;
+            if (last > line && *last != '\t') {
+                cb(3, id, title, ctx);
+            }
+        }
+        fclose(f);
+    }
+    
+    /* Facts (entity_type 4) */
+    data_path(path, sizeof(path), "facts.txt");
+    f = fopen(path, "r");
+    if (f) {
+        char line[LINE_MAX];
+        while (fgets(line, sizeof(line), f)) {
+            int id;
+            char key[VIBE_TITLE_MAX];
+            if (sscanf(line, "%d\t%255[^\t]", &id, key) != 2) continue;
+            char *p = line;
+            int tabs = 0;
+            while (*p) { if (*p == '\t') tabs++; p++; }
+            if (tabs < 4) continue;
+            p = line + strlen(line) - 1;
+            while (p > line && (*p == '\n' || *p == '\r')) p--;
+            if (p > line && *p != '\t' && *p != ' ') {
+                cb(4, id, key, ctx);
+            }
+        }
+        fclose(f);
+    }
+}
+
+/* Restore: clear deleted_at field for an entity by reading directly from file */
+int storage_restore(int entity_type, int id) {
+    char path[DATA_DIR_MAX + 64];
+    char line[LINE_MAX];
+    FILE *f;
+    
+    switch (entity_type) {
+        case 0: { /* Notes */
+            data_path(path, sizeof(path), "notes.txt");
+            f = fopen(path, "r");
+            if (!f) return 0;
+            while (fgets(line, sizeof(line), f)) {
+                int line_id = atoi(line);
+                if (line_id != id) continue;
+                char *p = line;
+                char *q = strchr(p, '\t');
+                if (!q) { fclose(f); return 0; }
+                q++;
+                char *title_start = q;
+                q = strchr(q, '\t');
+                if (!q) { fclose(f); return 0; }
+                *q = '\0';
+                char title[VIBE_TITLE_MAX];
+                snprintf(title, sizeof(title), "%s", title_start);
+                *q = '\t';
+                q++;
+                char *content_start = q;
+                q = strchr(q, '\t');
+                if (!q) { fclose(f); return 0; }
+                *q = '\0';
+                char content[VIBE_CONTENT_MAX];
+                snprintf(content, sizeof(content), "%s", content_start);
+                fclose(f);
+                return notes_rewrite(id, 0, title, content);
+            }
+            fclose(f);
+            return 0;
+        }
+        case 1: { /* Tasks */
+            data_path(path, sizeof(path), "tasks.txt");
+            f = fopen(path, "r");
+            if (!f) return 0;
+            while (fgets(line, sizeof(line), f)) {
+                int line_id, done, priority;
+                char title[VIBE_TITLE_MAX], due[VIBE_DATETIME_MAX];
+                if (sscanf(line, "%d\t%255[^\t]\t%d\t%31[^\t]\t%d", &line_id, title, &done, due, &priority) >= 4) {
+                    if (line_id == id) {
+                        fclose(f);
+                        return tasks_rewrite(id, done, 0, title, due, priority);
+                    }
+                }
+            }
+            fclose(f);
+            return 0;
+        }
+        case 2: { /* Contacts */
+            data_path(path, sizeof(path), "contacts.txt");
+            f = fopen(path, "r");
+            if (!f) return 0;
+            while (fgets(line, sizeof(line), f)) {
+                int line_id = atoi(line);
+                if (line_id != id) continue;
+                char *p = line;
+                char *q = strchr(p, '\t');
+                if (!q) { fclose(f); return 0; }
+                q++;
+                char *name_start = q;
+                q = strchr(q, '\t');
+                if (!q) { fclose(f); return 0; }
+                *q = '\0';
+                char name[VIBE_NAME_MAX];
+                snprintf(name, sizeof(name), "%s", name_start);
+                *q = '\t';
+                q++;
+                char *email_start = q;
+                q = strchr(q, '\t');
+                if (!q) { fclose(f); return 0; }
+                *q = '\0';
+                char email[VIBE_EMAIL_MAX];
+                snprintf(email, sizeof(email), "%s", email_start);
+                *q = '\t';
+                q++;
+                char *phone_start = q;
+                q = strchr(q, '\t');
+                if (!q) { fclose(f); return 0; }
+                *q = '\0';
+                char phone[VIBE_PHONE_MAX];
+                snprintf(phone, sizeof(phone), "%s", phone_start);
+                fclose(f);
+                return contacts_rewrite(id, 0, name, email, phone);
+            }
+            fclose(f);
+            return 0;
+        }
+        case 3: { /* Events */
+            data_path(path, sizeof(path), "events.txt");
+            f = fopen(path, "r");
+            if (!f) return 0;
+            while (fgets(line, sizeof(line), f)) {
+                int line_id = atoi(line);
+                if (line_id != id) continue;
+                char *p = line;
+                char *q = strchr(p, '\t');
+                if (!q) { fclose(f); return 0; }
+                q++;
+                char *title_start = q;
+                q = strchr(q, '\t');
+                if (!q) { fclose(f); return 0; }
+                *q = '\0';
+                char title[VIBE_TITLE_MAX];
+                snprintf(title, sizeof(title), "%s", title_start);
+                *q = '\t';
+                q++;
+                q = strchr(q, '\t'); /* skip desc */
+                if (!q) { fclose(f); return 0; }
+                q++;
+                char *start_start = q;
+                q = strchr(q, '\t');
+                if (!q) { fclose(f); return 0; }
+                *q = '\0';
+                char start[VIBE_DATETIME_MAX];
+                snprintf(start, sizeof(start), "%s", start_start);
+                *q = '\t';
+                q++;
+                char *end_start = q;
+                q = strchr(q, '\t');
+                if (!q) { fclose(f); return 0; }
+                *q = '\0';
+                char end[VIBE_DATETIME_MAX];
+                snprintf(end, sizeof(end), "%s", end_start);
+                *q = '\t';
+                q++;
+                int all_day = atoi(q);
+                fclose(f);
+                return events_rewrite(id, 0, title, "", start, end, all_day);
+            }
+            fclose(f);
+            return 0;
+        }
+        case 4: { /* Facts */
+            data_path(path, sizeof(path), "facts.txt");
+            f = fopen(path, "r");
+            if (!f) return 0;
+            while (fgets(line, sizeof(line), f)) {
+                int line_id = atoi(line);
+                if (line_id != id) continue;
+                char *p = line;
+                char *q = strchr(p, '\t');
+                if (!q) { fclose(f); return 0; }
+                q++;
+                char *key_start = q;
+                q = strchr(q, '\t');
+                if (!q) { fclose(f); return 0; }
+                *q = '\0';
+                char key[VIBE_TITLE_MAX];
+                snprintf(key, sizeof(key), "%s", key_start);
+                *q = '\t';
+                q++;
+                char *value_start = q;
+                q = strchr(q, '\t');
+                if (!q) { fclose(f); return 0; }
+                *q = '\0';
+                char value[VIBE_CONTENT_MAX];
+                snprintf(value, sizeof(value), "%s", value_start);
+                fclose(f);
+                return facts_rewrite(id, 0, key, value);
+            }
+            fclose(f);
+            return 0;
+        }
+        case 5: { /* Finances */
+            /* Stub - not implemented yet */
+            return 0;
+        }
+        case 6: { /* Documents */
+            /* Stub - not implemented yet */
+            return 0;
+        }
+        default:
+            return 0;
+    }
+}
+
+/* Finances: stub implementations */
+int storage_finances_count(void) { return 0; }
+int storage_finances_add(const char *date, const char *description, double amount, const char *category, const char *account, const char *notes) {
+    (void)date; (void)description; (void)amount; (void)category; (void)account; (void)notes;
+    return 0;
+}
+void storage_finances_list(void (*cb)(const VibeFinanceEntry *, void *), void *ctx) {
+    (void)cb; (void)ctx;
+}
+int storage_finance_get(int id, VibeFinanceEntry *out) {
+    (void)id; (void)out;
+    return 0;
+}
+int storage_finances_update(int id, const char *date, const char *description, double amount, const char *category, const char *account, const char *notes) {
+    (void)id; (void)date; (void)description; (void)amount; (void)category; (void)account; (void)notes;
+    return 0;
+}
+int storage_finances_delete(int id) {
+    (void)id;
+    return 0;
+}
+
+/* Documents: stub implementations */
+int storage_documents_count(void) { return 0; }
+int storage_documents_add(const char *title, const char *template_name, const char *content) {
+    (void)title; (void)template_name; (void)content;
+    return 0;
+}
+void storage_documents_list(void (*cb)(const VibeDocument *, void *), void *ctx) {
+    (void)cb; (void)ctx;
+}
+int storage_document_get(int id, VibeDocument *out) {
+    (void)id; (void)out;
+    return 0;
+}
+int storage_documents_update(int id, const char *title, const char *template_name, const char *content) {
+    (void)id; (void)title; (void)template_name; (void)content;
+    return 0;
+}
+int storage_documents_delete(int id) {
+    (void)id;
+    return 0;
+}
+
+/* Permanent delete: actually remove records from storage (cannot be undone) */
+static int permanent_delete_rewrite(const char *filename, int skip_id) {
+    char path[DATA_DIR_MAX + 64];
+    data_path(path, sizeof(path), filename);
+    char tmp[DATA_DIR_MAX + 72];
+    snprintf(tmp, sizeof(tmp), "%s.$$$", path);
+    FILE *in = fopen(path, "r");
+    if (!in) return 0;
+    FILE *out = fopen(tmp, "w");
+    if (!out) { fclose(in); return 0; }
+    char line[LINE_MAX];
+    int found = 0;
+    while (fgets(line, sizeof(line), in)) {
+        int id = atoi(line);
+        if (id == skip_id) {
+            found = 1;
+            continue; /* Skip this line entirely */
+        }
+        fputs(line, out);
+    }
+    fclose(in);
+    fclose(out);
+    if (found) {
+        remove(path);
+        rename(tmp, path);
+        return 1;
+    } else {
+        remove(tmp);
+        return 0;
+    }
+}
+
+int storage_permanent_delete(int entity_type, int id) {
+    switch (entity_type) {
+        case 0: return permanent_delete_rewrite("notes.txt", id);
+        case 1: return permanent_delete_rewrite("tasks.txt", id);
+        case 2: return permanent_delete_rewrite("contacts.txt", id);
+        case 3: return permanent_delete_rewrite("events.txt", id);
+        case 4: return permanent_delete_rewrite("facts.txt", id);
+        case 5: return permanent_delete_rewrite("finances.txt", id);
+        case 6: return permanent_delete_rewrite("documents.txt", id);
+        default: return 0;
+    }
+}
+
+int storage_empty_trash(void) {
+    int count = 0;
+    char path[DATA_DIR_MAX + 64];
+    char tmp[DATA_DIR_MAX + 72];
+    FILE *in, *out;
+    char line[LINE_MAX];
+    
+    /* Notes */
+    data_path(path, sizeof(path), "notes.txt");
+    snprintf(tmp, sizeof(tmp), "%s.$$$", path);
+    in = fopen(path, "r");
+    if (in) {
+        out = fopen(tmp, "w");
+        if (out) {
+            while (fgets(line, sizeof(line), in)) {
+                char *p = line;
+                int tabs = 0;
+                while (*p) { if (*p == '\t') tabs++; p++; }
+                if (tabs < 4) { fputs(line, out); continue; }
+                p = line + strlen(line) - 1;
+                while (p > line && (*p == '\n' || *p == '\r')) p--;
+                if (p > line && *p != '\t' && *p != ' ') {
+                    count++; /* Skip deleted items */
+                } else {
+                    fputs(line, out); /* Keep non-deleted items */
+                }
+            }
+            fclose(out);
+        }
+        fclose(in);
+        if (count > 0 || 1) { remove(path); rename(tmp, path); }
+        else remove(tmp);
+    }
+    
+    /* Tasks */
+    data_path(path, sizeof(path), "tasks.txt");
+    snprintf(tmp, sizeof(tmp), "%s.$$$", path);
+    in = fopen(path, "r");
+    if (in) {
+        out = fopen(tmp, "w");
+        if (out) {
+            while (fgets(line, sizeof(line), in)) {
+                int line_id;
+                if (sscanf(line, "%d", &line_id) != 1) { fputs(line, out); continue; }
+                char *last = line + strlen(line) - 1;
+                while (last > line && (*last == '\n' || *last == '\r')) last--;
+                if (last > line && *last != '\t') {
+                    count++; /* Skip deleted items */
+                } else {
+                    fputs(line, out); /* Keep non-deleted items */
+                }
+            }
+            fclose(out);
+        }
+        fclose(in);
+        if (count > 0 || 1) { remove(path); rename(tmp, path); }
+        else remove(tmp);
+    }
+    
+    /* Contacts */
+    data_path(path, sizeof(path), "contacts.txt");
+    snprintf(tmp, sizeof(tmp), "%s.$$$", path);
+    in = fopen(path, "r");
+    if (in) {
+        out = fopen(tmp, "w");
+        if (out) {
+            while (fgets(line, sizeof(line), in)) {
+                int line_id;
+                if (sscanf(line, "%d", &line_id) != 1) { fputs(line, out); continue; }
+                char *last = line + strlen(line) - 1;
+                while (last > line && (*last == '\n' || *last == '\r')) last--;
+                if (last > line && *last != '\t') {
+                    count++; /* Skip deleted items */
+                } else {
+                    fputs(line, out); /* Keep non-deleted items */
+                }
+            }
+            fclose(out);
+        }
+        fclose(in);
+        if (count > 0 || 1) { remove(path); rename(tmp, path); }
+        else remove(tmp);
+    }
+    
+    /* Events */
+    data_path(path, sizeof(path), "events.txt");
+    snprintf(tmp, sizeof(tmp), "%s.$$$", path);
+    in = fopen(path, "r");
+    if (in) {
+        out = fopen(tmp, "w");
+        if (out) {
+            while (fgets(line, sizeof(line), in)) {
+                int line_id;
+                if (sscanf(line, "%d", &line_id) != 1) { fputs(line, out); continue; }
+                char *last = line + strlen(line) - 1;
+                while (last > line && (*last == '\n' || *last == '\r')) last--;
+                if (last > line && *last != '\t') {
+                    count++; /* Skip deleted items */
+                } else {
+                    fputs(line, out); /* Keep non-deleted items */
+                }
+            }
+            fclose(out);
+        }
+        fclose(in);
+        if (count > 0 || 1) { remove(path); rename(tmp, path); }
+        else remove(tmp);
+    }
+    
+    /* Facts */
+    data_path(path, sizeof(path), "facts.txt");
+    snprintf(tmp, sizeof(tmp), "%s.$$$", path);
+    in = fopen(path, "r");
+    if (in) {
+        out = fopen(tmp, "w");
+        if (out) {
+            while (fgets(line, sizeof(line), in)) {
+                char *p = line;
+                int tabs = 0;
+                while (*p) { if (*p == '\t') tabs++; p++; }
+                if (tabs < 4) { fputs(line, out); continue; }
+                p = line + strlen(line) - 1;
+                while (p > line && (*p == '\n' || *p == '\r')) p--;
+                if (p > line && *p != '\t' && *p != ' ') {
+                    count++; /* Skip deleted items */
+                } else {
+                    fputs(line, out); /* Keep non-deleted items */
+                }
+            }
+            fclose(out);
+        }
+        fclose(in);
+        if (count > 0 || 1) { remove(path); rename(tmp, path); }
+        else remove(tmp);
+    }
+    
+    return count;
+}
+
+/* Search/Filter functions - filter list results by query (case-insensitive substring match) */
+
+void storage_set_search_filter(const char *query) {
+    (void)query; /* Not needed for file-based storage, filtering happens in list functions */
+}
+
+void storage_notes_list_filtered(void (*cb)(const VibeNote *, void *), void *ctx, const char *query) {
+    if (!query || !*query) {
+        storage_notes_list(cb, ctx);
+        return;
+    }
+    char path[DATA_DIR_MAX + 64];
+    data_path(path, sizeof(path), "notes.txt");
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    char line[LINE_MAX];
+    while (fgets(line, sizeof(line), f)) {
+        VibeNote n = {0};
+        char *p = line;
+        char *q = strchr(p, '\t');
+        if (!q) continue;
+        *q = '\0'; n.id = atoi(p); *q = '\t'; p = q + 1;
+        q = strchr(p, '\t');
+        if (!q) continue;
+        *q = '\0'; snprintf(n.title, sizeof(n.title), "%s", p); *q = '\t'; p = q + 1;
+        q = strchr(p, '\t');
+        if (!q) continue;
+        *q = '\0'; snprintf(n.content, sizeof(n.content), "%s", p); *q = '\t'; p = q + 1;
+        q = strchr(p, '\t');
+        if (!q) continue;
+        *q = '\0'; snprintf(n.created_at, sizeof(n.created_at), "%s", p); *q = '\t'; p = q + 1;
+        if (p[0] != '\t' && p[0] != '\n' && p[0] != '\0') continue;
+        /* Filter: match title or content */
+        if (str_contains_ci(n.title, query) || str_contains_ci(n.content, query)) {
+            cb(&n, ctx);
+        }
+    }
+    fclose(f);
+}
+
+void storage_tasks_list_filtered(void (*cb)(const VibeTask *, void *), void *ctx, const char *query) {
+    if (!query || !*query) {
+        storage_tasks_list(cb, ctx);
+        return;
+    }
+    char path[DATA_DIR_MAX + 64];
+    data_path(path, sizeof(path), "tasks.txt");
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    char line[LINE_MAX];
+    while (fgets(line, sizeof(line), f)) {
+        VibeTask t = {0};
+        int done;
+        if (sscanf(line, "%d\t%255[^\t]\t%d\t%31[^\t]\t%d\t%31[^\t]",
+                   &t.id, t.title, &done, t.due_date, &t.priority, t.created_at) >= 5) {
+            t.done = done;
+            char *p = strchr(line, '\t');
+            for (int i = 0; i < 5 && p; i++) p = strchr(p + 1, '\t');
+            if (p && (p[1] == '\t' || p[1] == '\n' || !p[1])) {
+                /* Filter: match title */
+                if (str_contains_ci(t.title, query)) {
+                    cb(&t, ctx);
+                }
+            }
+        }
+    }
+    fclose(f);
+}
+
+void storage_contacts_list_filtered(void (*cb)(const VibeContact *, void *), void *ctx, const char *query) {
+    if (!query || !*query) {
+        storage_contacts_list(cb, ctx);
+        return;
+    }
+    char path[DATA_DIR_MAX + 64];
+    data_path(path, sizeof(path), "contacts.txt");
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    char line[LINE_MAX];
+    while (fgets(line, sizeof(line), f)) {
+        VibeContact c = {0};
+        char *p = line;
+        char *q = strchr(p, '\t');
+        if (!q) continue;
+        *q = '\0'; c.id = atoi(p); *q = '\t'; p = q + 1;
+        q = strchr(p, '\t');
+        if (!q) continue;
+        *q = '\0'; snprintf(c.name, sizeof(c.name), "%s", p); *q = '\t'; p = q + 1;
+        q = strchr(p, '\t');
+        if (!q) continue;
+        *q = '\0'; snprintf(c.email, sizeof(c.email), "%s", p); *q = '\t'; p = q + 1;
+        q = strchr(p, '\t');
+        if (!q) continue;
+        *q = '\0'; snprintf(c.phone, sizeof(c.phone), "%s", p); *q = '\t'; p = q + 1;
+        q = strchr(p, '\t');
+        if (!q) continue;
+        p = q + 1; /* skip notes field */
+        q = strchr(p, '\t');
+        if (!q) continue;
+        *q = '\0'; snprintf(c.created_at, sizeof(c.created_at), "%s", p); *q = '\t'; p = q + 1;
+        if (p[0] != '\t' && p[0] != '\n' && p[0] != '\0') continue;
+        /* Filter: match name, email, or phone */
+        if (str_contains_ci(c.name, query) || str_contains_ci(c.email, query) || str_contains_ci(c.phone, query)) {
+            cb(&c, ctx);
+        }
+    }
+    fclose(f);
+}
+
+void storage_events_list_filtered(void (*cb)(const VibeCalendarEvent *, void *), void *ctx, const char *query) {
+    if (!query || !*query) {
+        storage_events_list(cb, ctx);
+        return;
+    }
+    char path[DATA_DIR_MAX + 64];
+    data_path(path, sizeof(path), "events.txt");
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    char line[LINE_MAX];
+    while (fgets(line, sizeof(line), f)) {
+        VibeCalendarEvent e = {0};
+        char *p = line;
+        char *q = strchr(p, '\t');
+        if (!q) continue;
+        *q = '\0'; e.id = atoi(p); *q = '\t'; p = q + 1;
+        q = strchr(p, '\t');
+        if (!q) continue;
+        *q = '\0'; snprintf(e.title, sizeof(e.title), "%s", p); *q = '\t'; p = q + 1;
+        q = strchr(p, '\t');
+        if (!q) continue;
+        p = q + 1; /* skip desc */
+        q = strchr(p, '\t');
+        if (!q) continue;
+        *q = '\0'; snprintf(e.start_at, sizeof(e.start_at), "%s", p); *q = '\t'; p = q + 1;
+        q = strchr(p, '\t');
+        if (!q) continue;
+        *q = '\0'; snprintf(e.end_at, sizeof(e.end_at), "%s", p); *q = '\t'; p = q + 1;
+        q = strchr(p, '\t');
+        if (!q) continue;
+        *q = '\0'; e.all_day = atoi(p); *q = '\t'; p = q + 1;
+        q = strchr(p, '\t');
+        if (!q) continue;
+        *q = '\0'; snprintf(e.created_at, sizeof(e.created_at), "%s", p); *q = '\t'; p = q + 1;
+        if (p[0] != '\t' && p[0] != '\n' && p[0] != '\0') continue;
+        /* Filter: match title */
+        if (str_contains_ci(e.title, query)) {
+            cb(&e, ctx);
+        }
+    }
+    fclose(f);
+}
+
+void storage_facts_list_filtered(void (*cb)(const VibeFact *, void *), void *ctx, const char *query) {
+    if (!query || !*query) {
+        storage_facts_list(cb, ctx);
+        return;
+    }
+    char path[DATA_DIR_MAX + 64];
+    data_path(path, sizeof(path), "facts.txt");
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    char line[LINE_MAX];
+    while (fgets(line, sizeof(line), f)) {
+        VibeFact fact = {0};
+        char *p = line;
+        if (sscanf(p, "%d", &fact.id) != 1) continue;
+        p = strchr(p, '\t');
+        if (!p) continue;
+        p++;
+        char *key_end = strchr(p, '\t');
+        if (!key_end) continue;
+        *key_end = '\0';
+        snprintf(fact.key, sizeof(fact.key), "%s", p);
+        p = key_end + 1;
+        char *val_end = strchr(p, '\t');
+        if (!val_end) continue;
+        *val_end = '\0';
+        snprintf(fact.value, sizeof(fact.value), "%s", p);
+        p = val_end + 1;
+        char *created_end = strchr(p, '\t');
+        if (!created_end) continue;
+        *created_end = '\0';
+        snprintf(fact.created_at, sizeof(fact.created_at), "%s", p);
+        p = created_end + 1;
+        char *deleted_end = strchr(p, '\n');
+        if (deleted_end) *deleted_end = '\0';
+        if (p[0] == '\0' || p[0] == '\t') {
+            fact.deleted_at[0] = '\0';
+            /* Filter: match key or value */
+            if (str_contains_ci(fact.key, query) || str_contains_ci(fact.value, query)) {
+                if (cb) cb(&fact, ctx);
+            }
+        } else {
+            snprintf(fact.deleted_at, sizeof(fact.deleted_at), "%s", p);
+        }
+    }
+    fclose(f);
+}
+
+void storage_finances_list_filtered(void (*cb)(const VibeFinanceEntry *, void *), void *ctx, const char *query) {
+    (void)cb; (void)ctx; (void)query;
+    /* Stub - not implemented yet */
+}
+
+void storage_documents_list_filtered(void (*cb)(const VibeDocument *, void *), void *ctx, const char *query) {
+    (void)cb; (void)ctx; (void)query;
+    /* Stub - not implemented yet */
+}

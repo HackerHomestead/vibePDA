@@ -209,11 +209,11 @@ void test_trash_integration(void) {
 #ifdef PLATFORM_LINUX
     if (strcmp(data_dir, ".") != 0) {
         char buf[512];
-        snprintf(buf, sizeof(buf), "%s/notes.txt", data_dir);    (void)unlink(buf);
-        snprintf(buf, sizeof(buf), "%s/tasks.txt", data_dir);    (void)unlink(buf);
-        snprintf(buf, sizeof(buf), "%s/contacts.txt", data_dir); (void)unlink(buf);
-        snprintf(buf, sizeof(buf), "%s/events.txt", data_dir);   (void)unlink(buf);
-        snprintf(buf, sizeof(buf), "%s/facts.txt", data_dir);    (void)unlink(buf);
+        snprintf(buf, sizeof(buf), "%s/notes.bin", data_dir);    (void)unlink(buf);
+        snprintf(buf, sizeof(buf), "%s/tasks.bin", data_dir);    (void)unlink(buf);
+        snprintf(buf, sizeof(buf), "%s/contacts.bin", data_dir); (void)unlink(buf);
+        snprintf(buf, sizeof(buf), "%s/events.bin", data_dir);   (void)unlink(buf);
+        snprintf(buf, sizeof(buf), "%s/facts.bin", data_dir);    (void)unlink(buf);
         (void)rmdir(data_dir);
     }
 #endif

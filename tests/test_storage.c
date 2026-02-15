@@ -23,11 +23,11 @@ static void test_storage_empty(const char *data_dir) {
 static void remove_test_dir(const char *path) {
 #ifdef PLATFORM_LINUX
     char buf[512];
-    snprintf(buf, sizeof(buf), "%s/notes.txt", path);    (void)unlink(buf);
-    snprintf(buf, sizeof(buf), "%s/tasks.txt", path);    (void)unlink(buf);
-    snprintf(buf, sizeof(buf), "%s/contacts.txt", path); (void)unlink(buf);
-    snprintf(buf, sizeof(buf), "%s/events.txt", path);   (void)unlink(buf);
-    snprintf(buf, sizeof(buf), "%s/facts.txt", path);    (void)unlink(buf);
+    snprintf(buf, sizeof(buf), "%s/notes.bin", path);    (void)unlink(buf);
+    snprintf(buf, sizeof(buf), "%s/tasks.bin", path);    (void)unlink(buf);
+    snprintf(buf, sizeof(buf), "%s/contacts.bin", path); (void)unlink(buf);
+    snprintf(buf, sizeof(buf), "%s/events.bin", path);   (void)unlink(buf);
+    snprintf(buf, sizeof(buf), "%s/facts.bin", path);    (void)unlink(buf);
     (void)rmdir(path);
 #else
     (void)path;

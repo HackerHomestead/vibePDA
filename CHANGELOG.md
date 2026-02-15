@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.9.0-alpha] - 2026-02-15
+
+### Changed
+
+- **Binary storage**: Switched from TSV text files to binary `.bin` format. Length-prefixed strings allow tabs and newlines in data. Migration from `.txt` to `.bin` on first run (Linux).
+
+---
+
 ## [0.8.0-alpha] - 2026-02-15
 
 **Alpha release.** Core TUI, storage, and CRUD in place.

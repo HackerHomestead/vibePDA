@@ -23,7 +23,7 @@ Terminal personal data assistant. **Status:** Alpha. **Implementation:** C (C++ 
 
 - **TUI**: curses (ncurses on Linux, PDCurses on DOS); VT102 minimum baseline.
 - **App**: Holds state (current module, focus, prompt mode, content editor); draws layout; F-keys for actions; note cards (Title + Content); multi-line content editor with cursor, line numbers (F5), scrolling (Page Up/Down); Enter=newline, Enter+Enter=save, Esc=cancel.
-- **Storage**: Single API (storage.h). File-based only (storage_file.c) on all platforms. All entities use soft-delete where applicable; Trash is a view over deleted items. Supports Notes, Tasks, Contacts, Calendar Events, and Facts (key-value pairs).
+- **Storage**: Single API (storage.h). File-based only (storage_file.c) on all platforms. Binary `.bin` format (length-prefixed strings) so tabs and newlines are safe in data. All entities use soft-delete where applicable; Trash is a view over deleted items. Supports Notes, Tasks, Contacts, Calendar Events, and Facts (key-value pairs).
 - **Config**: Database path, optional editor path, default view; future: JSON or key=value.
 
 ---
@@ -42,7 +42,7 @@ Terminal personal data assistant. **Status:** Alpha. **Implementation:** C (C++ 
 
 ## Data model (schema)
 
-Entities map to C structs in **types.h** and to storage backends (tables or flat files).
+Entities map to C structs in **types.h** and to binary flat files (notes.bin, tasks.bin, contacts.bin, events.bin, facts.bin).
 
 | Entity          | Purpose        | Main fields (types.h)                          |
 |-----------------|----------------|-------------------------------------------------|

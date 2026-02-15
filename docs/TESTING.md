@@ -24,7 +24,7 @@ This builds `run_tests` and runs it. Exit code 0 means all tests passed.
   - Trash module: F2/N disabled, restore (R), checkbox toggle (Space), select all/none (A/U), delete (X).
 
 - **Storage (backend)**  
-  - `storage_init()` and counts: init in a temp dir, counts return 0 when empty. Then (unless disabled) the test seeds **dummy data** and asserts counts. See **Dummy data** below.
+  - `storage_init()` and counts: init in a temp dir (uses `.bin` binary files), counts return 0 when empty. Then (unless disabled) the test seeds **dummy data** and asserts counts. See **Dummy data** below.
   - Trash functionality: soft-delete, trash listing, restore, permanent delete, empty trash.
   - Search/Filter: Filtered list functions for all modules with case-insensitive substring matching.
 

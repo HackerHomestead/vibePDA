@@ -543,7 +543,7 @@ Run a single operation and exit:
   - Default module
   - Environment variables (HOME, VIBE_DATA on Linux)
 
-- **`--data-dir DIR`**: Overrides the default data directory. All data files (notes.txt, tasks.txt, contacts.txt, etc.) will be stored in the specified directory. Useful for:
+- **`--data-dir DIR`**: Overrides the default data directory. All data files (notes.bin, tasks.bin, contacts.bin, etc.) will be stored in the specified directory. Useful for:
   - Using a different location for data files
   - Testing with isolated data
   - Portable installations (e.g., USB drives)
@@ -632,7 +632,7 @@ vibePDA requires:
 
 Data files are stored in:
 - Linux: `~/.local/share/vibe/` or current directory
-- Files: `notes.txt`, `tasks.txt`, `contacts.txt`, `events.txt`, `facts.txt`
+- Files: `notes.bin`, `tasks.bin`, `contacts.bin`, `events.bin`, `facts.bin` (binary format)
 
 ### Getting Help
 

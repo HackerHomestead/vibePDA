@@ -40,20 +40,22 @@
 
 ## Storage
 
-vibePDA uses **file-based storage** — no database. One plain text file per entity type, stored as tab-separated values (TSV). Default location: `~/.local/share/vibe` on Linux, or `.` on DOS. Override with `--data-dir`.
+vibePDA uses **binary file-based storage** — no database. One `.bin` file per entity type. Default location: `~/.local/share/vibe` on Linux, or `.` on DOS. Override with `--data-dir`.
 
-| File | Format |
-|------|--------|
-| `notes.txt` | `id` \t `title` \t `content` \t `created_at` \t `deleted_at` |
-| `tasks.txt` | `id` \t `title` \t `done` \t `due_date` \t `priority` \t `created_at` \t `deleted_at` |
-| `contacts.txt` | `id` \t `name` \t `email` \t `phone` \t `notes` \t `created_at` \t `deleted_at` |
-| `events.txt` | `id` \t `title` \t `description` \t `start_at` \t `end_at` \t `all_day` \t `created_at` \t `deleted_at` |
-| `facts.txt` | `id` \t `key` \t `value` \t `created_at` \t `deleted_at` |
+**Format**: Length-prefixed strings (4-byte uint32_t) + 4-byte integers. Little-endian. Supports tabs and newlines in data.
 
-- **Soft delete**: `deleted_at` empty = active; timestamp = in Trash. Delete moves items to Trash.
+| File | Record layout |
+|------|---------------|
+| `notes.bin` | id(4) + title + content + created_at + deleted_at |
+| `tasks.bin` | id(4) + title + done(4) + due_date + priority(4) + created_at + deleted_at |
+| `contacts.bin` | id(4) + name + email + phone + notes + created_at + deleted_at |
+| `events.bin` | id(4) + title + description + start_at + end_at + all_day(4) + created_at + deleted_at |
+| `facts.bin` | id(4) + key + value + created_at + deleted_at |
+
+- **Soft delete**: `deleted_at` empty = active; non-empty = in Trash. Delete moves items to Trash.
 - **Permanent delete**: Removes records from the file (cannot be undone).
-- **Sanitization**: Tab and newline characters in user input are replaced with spaces.
-- **Human-readable**: Files can be edited with any text editor or processed with standard Unix tools.
+- **Migration**: On first run, existing `.txt` (TSV) files are migrated to `.bin` and removed.
+- **Robust**: Tabs and newlines in content are preserved; no sanitization.
 
 ---
 
@@ -71,7 +73,7 @@ vibePDA uses **file-based storage** — no database. One plain text file per ent
 - **`--help`**, **`-h`** — Print usage and exit.
 - **`--version`**, **`-v`** — Print version and exit.
 - **`--config`** — Print current configuration (data directory, database path, environment variables) and exit.
-- **`--data-dir DIR`** — Override default data directory. All data files (notes.txt, tasks.txt, etc.) will be stored in the specified directory.
+- **`--data-dir DIR`** — Override default data directory. All data files (notes.bin, tasks.bin, etc.) will be stored in the specified directory.
 - **`--display MODE`** — Set display size: `small` (80x25), `auto` (terminal size), or `custom COLxROW` (e.g. `--display custom 120x30`).
 - **Unknown arguments** — Print "unknown argument" to stderr, show help, and exit with code 1.
 
@@ -86,7 +88,7 @@ Run a single CRUD operation and exit (no TUI):
 - **trash** — `list` | `restore <type> <id>` (type: note, task, contact, event, fact)
 - **facts** — `add <key> <value>` | `list` | `show <id>` | `edit <id> <key> <value>` | `delete <id>`
 
-Example: `./vibePDA notes add "My title" "Content"` prints the new note id; `./vibePDA notes list` prints tab-separated id, title, content.
+Example: `./vibePDA notes add "My title" "Content"` prints the new note id; `./vibePDA notes list` prints id, title, content.
 
 ### Interactive command mode (REPL)
 

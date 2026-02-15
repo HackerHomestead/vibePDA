@@ -40,7 +40,7 @@ static void test_data_dir_override(void) {
     
     /* Verify file exists in custom directory */
     char notes_file[512];
-    snprintf(notes_file, sizeof(notes_file), "%s/notes.txt", tmpdir);
+    snprintf(notes_file, sizeof(notes_file), "%s/notes.bin", tmpdir);
     FILE *f = fopen(notes_file, "r");
     assert(f != NULL);
     fclose(f);

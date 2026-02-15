@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.4.1] - 2026-02-15
+
+### Fixed
+
+- Tests: remove unused `encoding/json` import in config_test.go
+- Build: run `go mod tidy` to sync dependencies
+
+---
+
 ## [0.4.0] - 2026-02-14
 
 ### Added

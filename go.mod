@@ -1,11 +1,12 @@
 module github.com/you/vibe
 
-go 1.24
+go 1.24.2
 
 require (
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
+	modernc.org/sqlite v1.45.0
 )
 
 require (
@@ -39,5 +40,4 @@ require (
 	modernc.org/libc v1.67.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.45.0 // indirect
 )

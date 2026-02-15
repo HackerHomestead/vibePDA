@@ -21,7 +21,7 @@ Outlook-style layout: folder sidebar on the left, main content on the right. No 
 
 ## Requirements
 
-- **Go 1.21+** — Many Linux distros ship older Go. Install Go 1.23 via:
+- **Go 1.24.2+** — Many Linux distros ship older Go. Install via:
   ```bash
   ./scripts/install-go.sh
   ```
@@ -37,14 +37,15 @@ Outlook-style layout: folder sidebar on the left, main content on the right. No 
 ```bash
 git clone <repo-url>
 cd vibe
+./configure
 make build
 ./vibe
 ```
 
-Or manually:
+Or without configure (uses default Go):
 
 ```bash
-go build -ldflags "-X github.com/you/vibe/internal/app.BuildNumber=$(cat VERSION 2>/dev/null | tr -d '\n' || echo dev)" -o vibe ./cmd/vibe
+make build
 ./vibe
 ```
 
@@ -58,65 +59,32 @@ cp vibe ~/bin/
 
 ## Usage
 
-### Global
+### Global (DOS-style function key bar at bottom)
 
-| Key            | Action                          |
-|----------------|---------------------------------|
-| `Tab`          | Focus main pane (from sidebar)  |
-| `Shift+Tab`    | Focus sidebar (from main pane)  |
-| `↑` / `↓`      | Navigate sidebar modules        |
-| `Enter`        | Select module                   |
-| `q` / `Ctrl+C` | Quit                            |
+| Key  | Action                    |
+|------|---------------------------|
+| `F1` | Notes module              |
+| `F2` | Tasks module              |
+| `F3` | Contacts module           |
+| `F4` | Calendar module           |
+| `F5` | New item                  |
+| `F6` | Edit selected / Enter     |
+| `F7` | Delete selected           |
+| `F8` | Focus main pane           |
+| `F9` | Focus sidebar             |
+| `F10`| Save (in forms)           |
+| `F11`| Cancel / Esc (in forms)   |
+| `F12`| Quit                      |
 
-### Calendar (Tab to focus main, then)
+`↑` / `↓` or `j` / `k` — move selection within list. Status bar shows current key bindings.
 
-| Key        | Action                                    |
-|------------|-------------------------------------------|
-| `←` / `→` or `h` / `l` | Previous/next month              |
-| `t`        | Jump to today                             |
-| `n`        | New event                                 |
-| `Enter`    | Edit selected event                       |
-| `d`        | Delete selected event                     |
-| `j` / `k`  | Move event selection                      |
+### Per-module actions (status bar updates context)
 
-**Event form:** Title → Start (HH:MM) → End (HH:MM) → Notes → Attendees (optional). **Enter** next field, **Ctrl+Tab** Notes→Attendees, **Tab** in Notes = indent. **Ctrl+S** or **Ctrl+Enter** save, **Esc** cancel.
+**Calendar:** F5 new, F6 edit, F7 delete. `←`/`→` month, `,`/`.` day, `a` all, `t` today.
 
-### Tasks (Tab to focus main, then)
+**Tasks:** F5 new, F6 edit, F7 delete. `space` toggle done, `Ctrl+↑`/`Ctrl+↓` reorder.
 
-| Key       | Action                       |
-|-----------|------------------------------|
-| `n`       | New task                     |
-| `Enter`   | Edit selected task           |
-| `space`   | Toggle done                  |
-| `Ctrl+↑` / `Ctrl+↓` | Reorder task          |
-| `d`       | Delete selected task         |
-| `j` / `k` | Move selection               |
-
-### Notes (Tab to focus main, then)
-
-| Key             | Action                |
-|-----------------|-----------------------|
-| `n`             | New note              |
-| `Enter`         | Edit selected note    |
-| `Ctrl+S` / `Ctrl+Enter` | Save (in form)        |
-| `Esc`           | Cancel (in form)      |
-| `d`             | Delete selected note  |
-| `j` / `k`       | Move selection        |
-
-First line = title, rest = content. Multiline textarea.
-
-### Contacts (Tab to focus main, then)
-
-| Key             | Action                |
-|-----------------|-----------------------|
-| `n`             | New contact           |
-| `Enter`         | Edit selected contact |
-| `Ctrl+S` / `Ctrl+Enter` | Save (in form)        |
-| `Esc`           | Cancel (in form)      |
-| `d`             | Delete selected contact |
-| `j` / `k`       | Move selection        |
-
-Form: Name → Email → Phone → Notes. Enter next field, Shift+Tab previous.
+**Notes / Contacts:** F5 new, F6 edit, F7 delete. First line = title. Form: Enter next field, F10 save, F11 cancel.
 
 ---
 

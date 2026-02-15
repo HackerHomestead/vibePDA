@@ -96,7 +96,7 @@ Like a classic GW-BASIC session: prompt, type commands, see output, scroll back.
 
 ```bash
 ./vibePDA -cmd
-vibePDA 0.7.3 — interactive command mode (type 'help' or 'quit')
+vibePDA 0.9.1-alpha — interactive command mode (type 'help' or 'quit')
 vibe> notes list
 1	My note	Content
 vibe> tasks add "Todo"
@@ -145,6 +145,7 @@ make install
 - **CHANGELOG.md**: Version history and changes
 - **PLAN.md**: Technical architecture and design notes
 - **docs/TESTING.md**: Testing documentation
+- **docs/CODE_REVIEW.md**: Senior developer code review and recommendations
 - **docs/images/**: Screenshots and animated demo (`scripts/gen_screenshots.py` to regenerate)
 
 ## Tests
@@ -188,6 +189,7 @@ vibe/
 ├── scripts/            # gen_screenshots.py (PNG + GIF for docs)
 ├── README.md, CHANGELOG.md, PLAN.md, VERSION
 └── docs/
+    ├── CODE_REVIEW.md   # Code review and recommendations
     ├── TESTING.md
     ├── USER_MANUAL.md
     └── images/          # Screenshots (gen_screenshots.py)

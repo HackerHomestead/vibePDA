@@ -1,4 +1,8 @@
-/* main.c - vibePDA entry. Curses TUI (ncurses/PDCurses). Linux, DOS, WASM. */
+/* main.c - vibePDA entry point.
+ *
+ * Modes: TUI (default), one-shot CLI, interactive command (REPL).
+ * Parses --data-dir, --display, --config; initializes storage and runs app loop.
+ */
 
 #include "config.h"
 #include "app.h"
@@ -609,14 +613,18 @@ static int run_cli(int argc, char **argv) {
         if (strcmp(action, "list") == 0) {
             void print_trash(int type, int id, const char *title, void *ctx) {
                 (void)ctx;
-                const char *t = (type == 0) ? "note" : (type == 1) ? "task" : (type == 2) ? "contact" : "event";
+                const char *t = (type == 0) ? "note" : (type == 1) ? "task" : (type == 2) ? "contact" :
+                    (type == 3) ? "event" : (type == 4) ? "fact" : "?";
                 printf("%s\t%d\t%s\n", t, id, title);
             }
             storage_trash_list(print_trash, NULL);
             return 0;
         }
         if (strcmp(action, "restore") == 0 && arg_idx + 3 < argc) {
-            int type = (strcmp(argv[arg_idx + 2], "note") == 0) ? 0 : (strcmp(argv[arg_idx + 2], "task") == 0) ? 1 : (strcmp(argv[arg_idx + 2], "contact") == 0) ? 2 : 3;
+            const char *tname = argv[arg_idx + 2];
+            int type = (strcmp(tname, "note") == 0) ? 0 : (strcmp(tname, "task") == 0) ? 1 :
+                (strcmp(tname, "contact") == 0) ? 2 : (strcmp(tname, "event") == 0) ? 3 :
+                (strcmp(tname, "fact") == 0) ? 4 : -1;
             int id = atoi(argv[arg_idx + 3]);
             if (storage_restore(type, id)) { printf("ok\n"); return 0; }
             return 1;

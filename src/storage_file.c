@@ -1,6 +1,13 @@
 /* storage_file.c - Binary file-based storage (Linux, DOS). One file per entity type.
- * Format: length-prefixed strings (4-byte uint32_t) + 4-byte ints, 8-byte doubles.
- * Supports tabs and newlines in data. No sanitization. */
+ *
+ * BINARY FORMAT (little-endian):
+ *   - All multi-byte integers: uint32_t, little-endian
+ *   - Strings: 4-byte length (uint32_t) + N bytes UTF-8 data (no NUL)
+ *   - Supports tabs and newlines in data; no sanitization
+ *
+ * FILES: notes.bin, tasks.bin, contacts.bin, events.bin, facts.bin
+ * MIGRATION: On Linux, .txt (TSV) files are migrated to .bin on first run.
+ */
 
 #include "config.h"
 #include "storage.h"
@@ -17,11 +24,19 @@
 
 #define DATA_DIR_MAX 256
 #define LINE_MAX 8192
+#define EXT ".bin"
+
+/* Entity type codes for trash/restore (must match MODULE_* in app.h) */
+#define ENTITY_NOTE     0
+#define ENTITY_TASK     1
+#define ENTITY_CONTACT  2
+#define ENTITY_EVENT    3
+#define ENTITY_FACT     4
+#define ENTITY_FINANCE  5
+#define ENTITY_DOCUMENT 6
 
 static char s_data_dir[DATA_DIR_MAX];
 static int s_data_dir_set;
-
-#define EXT ".bin"
 
 static void timestamp(char *buf, int size) {
     time_t t = time(NULL);
@@ -32,8 +47,9 @@ static void timestamp(char *buf, int size) {
         snprintf(buf, size, "%ld", (long)t);
 }
 
-/* Copy string, truncate to max, no sanitization. */
+/* Copy string into dst, truncating to max-1 chars. No sanitization (tabs/newlines OK). */
 static void copy_str(char *dst, const char *src, int max) {
+    if (!dst || max <= 0) return;
     if (!src) { dst[0] = '\0'; return; }
     int n = 0;
     while (src[n] && n < max - 1) { dst[n] = src[n]; n++; }
@@ -182,8 +198,7 @@ static void migrate_notes_txt_to_bin(const char *path_txt, const char *path_bin)
         parse_tab_field(&p, deleted, sizeof(deleted));
         int id = atoi(id_buf);
         if (id <= 0) continue;
-        uint32_t u32 = (uint32_t)id;
-        fwrite(&u32, 1, 4, out);
+        write_u32(out, (uint32_t)id);
         write_str(out, title);
         write_str(out, content);
         write_str(out, created);
@@ -212,14 +227,11 @@ static void migrate_tasks_txt_to_bin(const char *path_txt, const char *path_bin)
         parse_tab_field(&p, deleted, sizeof(deleted));
         int id = atoi(id_buf);
         if (id <= 0) continue;
-        uint32_t u32 = (uint32_t)id;
-        fwrite(&u32, 1, 4, out);
+        write_u32(out, (uint32_t)id);
         write_str(out, title);
-        u32 = (uint32_t)atoi(done_buf);
-        fwrite(&u32, 1, 4, out);
+        write_u32(out, (uint32_t)atoi(done_buf));
         write_str(out, due);
-        u32 = (uint32_t)atoi(prio_buf);
-        fwrite(&u32, 1, 4, out);
+        write_u32(out, (uint32_t)atoi(prio_buf));
         write_str(out, created);
         write_str(out, deleted[0] ? deleted : "");
     }
@@ -246,8 +258,7 @@ static void migrate_contacts_txt_to_bin(const char *path_txt, const char *path_b
         parse_tab_field(&p, deleted, sizeof(deleted));
         int id = atoi(id_buf);
         if (id <= 0) continue;
-        uint32_t u32 = (uint32_t)id;
-        fwrite(&u32, 1, 4, out);
+        write_u32(out, (uint32_t)id);
         write_str(out, name);
         write_str(out, email);
         write_str(out, phone);
@@ -279,14 +290,12 @@ static void migrate_events_txt_to_bin(const char *path_txt, const char *path_bin
         parse_tab_field(&p, deleted, sizeof(deleted));
         int id = atoi(id_buf);
         if (id <= 0) continue;
-        uint32_t u32 = (uint32_t)id;
-        fwrite(&u32, 1, 4, out);
+        write_u32(out, (uint32_t)id);
         write_str(out, title);
         write_str(out, desc);
         write_str(out, start);
         write_str(out, end);
-        u32 = (uint32_t)atoi(all_buf);
-        fwrite(&u32, 1, 4, out);
+        write_u32(out, (uint32_t)atoi(all_buf));
         write_str(out, created);
         write_str(out, deleted[0] ? deleted : "");
     }
@@ -311,8 +320,7 @@ static void migrate_facts_txt_to_bin(const char *path_txt, const char *path_bin)
         parse_tab_field(&p, deleted, sizeof(deleted));
         int id = atoi(id_buf);
         if (id <= 0) continue;
-        uint32_t u32 = (uint32_t)id;
-        fwrite(&u32, 1, 4, out);
+        write_u32(out, (uint32_t)id);
         write_str(out, key);
         write_str(out, value);
         write_str(out, created);
@@ -1293,7 +1301,7 @@ void storage_trash_list(void (*cb)(int entity_type, int id, const char *title, v
 /* Restore: clear deleted_at for entity */
 int storage_restore(int entity_type, int id) {
     switch (entity_type) {
-        case 0: {
+        case ENTITY_NOTE: {
             char path[DATA_DIR_MAX + 64];
             data_path(path, sizeof(path), "notes" EXT);
             FILE *f = fopen(path, "rb");
@@ -1316,7 +1324,7 @@ int storage_restore(int entity_type, int id) {
             fclose(f);
             return 0;
         }
-        case 1: {
+        case ENTITY_TASK: {
             char path[DATA_DIR_MAX + 64];
             data_path(path, sizeof(path), "tasks" EXT);
             FILE *f = fopen(path, "rb");
@@ -1344,7 +1352,7 @@ int storage_restore(int entity_type, int id) {
             fclose(f);
             return 0;
         }
-        case 2: {
+        case ENTITY_CONTACT: {
             char path[DATA_DIR_MAX + 64];
             data_path(path, sizeof(path), "contacts" EXT);
             FILE *f = fopen(path, "rb");
@@ -1368,7 +1376,7 @@ contacts_restore_done:
             fclose(f);
             return 0;
         }
-        case 3: {
+        case ENTITY_EVENT: {
             char path[DATA_DIR_MAX + 64];
             data_path(path, sizeof(path), "events" EXT);
             FILE *f = fopen(path, "rb");
@@ -1395,7 +1403,7 @@ contacts_restore_done:
             fclose(f);
             return 0;
         }
-        case 4: {
+        case ENTITY_FACT: {
             char path[DATA_DIR_MAX + 64];
             data_path(path, sizeof(path), "facts" EXT);
             FILE *f = fopen(path, "rb");
@@ -1417,7 +1425,8 @@ contacts_restore_done:
             fclose(f);
             return 0;
         }
-        case 5: case 6: return 0;
+        case ENTITY_FINANCE:
+        case ENTITY_DOCUMENT: return 0;
         default: return 0;
     }
 }
@@ -1566,13 +1575,13 @@ static int permanent_delete_rewrite(const char *base, int skip_id) {
 
 int storage_permanent_delete(int entity_type, int id) {
     switch (entity_type) {
-        case 0: return permanent_delete_rewrite("notes", id);
-        case 1: return permanent_delete_rewrite("tasks", id);
-        case 2: return permanent_delete_rewrite("contacts", id);
-        case 3: return permanent_delete_rewrite("events", id);
-        case 4: return permanent_delete_rewrite("facts", id);
-        case 5: return permanent_delete_rewrite("finances", id);
-        case 6: return permanent_delete_rewrite("documents", id);
+        case ENTITY_NOTE:     return permanent_delete_rewrite("notes", id);
+        case ENTITY_TASK:     return permanent_delete_rewrite("tasks", id);
+        case ENTITY_CONTACT:  return permanent_delete_rewrite("contacts", id);
+        case ENTITY_EVENT:    return permanent_delete_rewrite("events", id);
+        case ENTITY_FACT:     return permanent_delete_rewrite("facts", id);
+        case ENTITY_FINANCE:  return permanent_delete_rewrite("finances", id);
+        case ENTITY_DOCUMENT: return permanent_delete_rewrite("documents", id);
         default: return 0;
     }
 }

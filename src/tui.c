@@ -1,5 +1,8 @@
 /* tui.c - Terminal I/O using curses (ncurses on Linux, PDCurses on DOS).
- * 1980s-style: 80x24, bold/reverse attributes, F-keys. */
+ *
+ * Thin wrapper: init/cleanup, goto, putstr/putchar, attributes, getkey.
+ * 1980s-style: 80x24, bold/reverse, F-keys. WASM stub does nothing.
+ */
 #include "tui.h"
 #include <string.h>
 

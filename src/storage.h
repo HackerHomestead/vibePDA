@@ -1,11 +1,17 @@
-/* storage.h - Storage backend API (file-based). Data layer. */
+/* storage.h - Storage backend API (file-based). Data layer.
+ *
+ * All entities use soft-delete (deleted_at). Trash lists deleted items;
+ * restore clears deleted_at; permanent_delete removes records entirely.
+ * entity_type for trash/restore: 0=note, 1=task, 2=contact, 3=event, 4=fact.
+ */
 
 #ifndef STORAGE_H
 #define STORAGE_H
 
 #include "types.h"
 
-/* Initialize storage; pass data directory (e.g. ~/.local/share/vibe). Call once at startup. */
+/* Initialize storage. Pass data directory (e.g. ~/.local/share/vibe).
+ * Call once at startup. Migrates .txt to .bin on Linux if needed. */
 void storage_init(const char *data_dir);
 
 /* Counts. Exclude soft-deleted unless noted. */

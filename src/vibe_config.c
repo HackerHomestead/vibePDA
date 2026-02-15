@@ -1,5 +1,8 @@
-/* vibe_config.c - Config layer (paths, defaults) */
-
+/* vibe_config.c - Config layer (paths, defaults).
+ *
+ * XDG-style: ~/.local/share/vibe for data on Linux.
+ * VIBE_DATA env overrides data dir on DOS. Database path is legacy.
+ */
 #include "vibe_config.h"
 #include <stdio.h>
 #include <string.h>

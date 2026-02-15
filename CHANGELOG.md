@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.9.1-alpha] - 2026-02-15
+
+### Added
+
+- **Code review**: Senior developer review with documentation, comments, and improvements. See `docs/CODE_REVIEW.md`.
+- **Entity type constants**: Replaced magic numbers in storage layer for maintainability.
+- **Trash CLI**: `trash list` and `trash restore` now support `fact` type; display shows correct type names.
+
+### Changed
+
+- **Storage migration**: Migration from .txt to .bin now uses `write_u32()` for consistent little-endian output.
+- **copy_str**: Added null and max<=0 guards for safety.
+- **Documentation**: Enhanced file headers in storage_file.c, storage.h, types.h, main.c, app.c, tui.c, vibe_config.c.
+
+---
+
 ## [0.9.0-alpha] - 2026-02-15
 
 ### Changed

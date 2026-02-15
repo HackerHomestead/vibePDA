@@ -1,5 +1,8 @@
-/* app.c - Main application UI. 1980s-style TUI: menu bar, F-keys, status line. */
-
+/* app.c - Main application UI.
+ *
+ * 1980s-style TUI: menu bar, sidebar, main pane, F-keys, status line.
+ * Handles CRUD, content editor, search/filter, trash. Draws note cards, lists.
+ */
 #include "app.h"
 #include "tui.h"
 #include "storage.h"

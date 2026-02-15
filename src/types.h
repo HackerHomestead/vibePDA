@@ -1,8 +1,12 @@
-/* types.h - Data types for vibePDA entities */
+/* types.h - Data types for vibePDA entities.
+ *
+ * All structs use fixed-size buffers. Soft-delete via deleted_at (non-empty = deleted).
+ */
 
 #ifndef VIBE_TYPES_H
 #define VIBE_TYPES_H
 
+/* Field size limits (bytes, including NUL) */
 #define VIBE_TITLE_MAX 256
 #define VIBE_CONTENT_MAX 4096
 #define VIBE_NAME_MAX 128

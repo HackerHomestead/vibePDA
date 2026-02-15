@@ -11,11 +11,12 @@ Built with Go and the [Charm](https://github.com/charmbracelet) ecosystem. SQLit
 | Module    | Description                 |
 |-----------|-----------------------------|
 | **Notes** | Scratchpad and quick notes  |
-| **Tasks** | To-do list with status      |
-| **Contacts** | Contact list            |
+| **Tasks** | To-do list with search, filter, sort |
+| **Contacts** | Contact list (multi-column when wide) |
 | **Calendar** | Events and appointments |
+| **Trash** | Soft-deleted items, restore |
 
-Outlook-style layout: folder sidebar on the left, main content on the right. No CGO, no ncurses — pure Go.
+Outlook-style layout: module sidebar (Notes, Tasks, Contacts, Calendar) on the left, main content on the right. No CGO, no ncurses — pure Go.
 
 ---
 
@@ -39,25 +40,44 @@ git clone <repo-url>
 cd vibe
 ./configure
 make build
-./vibe
+./vibePDA
 ```
 
 Or without configure (uses default Go):
 
 ```bash
 make build
-./vibe
+./vibePDA
 ```
 
 Optionally install to `~/bin` or `/usr/local/bin`:
 
 ```bash
-cp vibe ~/bin/
+cp vibePDA ~/bin/
 ```
+
+### Demo data
+
+Build and seed with 100+ Star Wars–themed records per module:
+
+```bash
+make build-demo
+VIBE_DB=./vibe-demo.db ./vibePDA
+```
+
+`make clean` removes the demo database (never touches your real `~/.local/share/vibe/vibe.db`).
 
 ---
 
 ## Usage
+
+```bash
+vibePDA [options]
+  -v, --version    Show build/version
+  -h, --help       Show help
+```
+
+Environment: `VIBE_DB` overrides database path (e.g. `VIBE_DB=./vibe-demo.db` for demo).
 
 ### Global (DOS-style function key bar at bottom)
 
@@ -67,7 +87,7 @@ cp vibe ~/bin/
 | `F2` | Tasks module              |
 | `F3` | Contacts module           |
 | `F4` | Calendar module           |
-| `F5` | New item                  |
+| `F5` | Trash (sidebar) / New (main) |
 | `F6` | Edit selected / Enter     |
 | `F7` | Delete selected           |
 | `F8` | Focus main pane           |
@@ -76,15 +96,19 @@ cp vibe ~/bin/
 | `F11`| Cancel / Esc (in forms)   |
 | `F12`| Quit                      |
 
-`↑` / `↓` or `j` / `k` — move selection within list. Status bar shows current key bindings.
+`↑` / `↓` or `j` / `k` — move selection. Status bar shows current key bindings.
 
 ### Per-module actions (status bar updates context)
 
-**Calendar:** F5 new, F6 edit, F7 delete. `←`/`→` month, `,`/`.` day, `a` all, `t` today.
+**Calendar:** F5 new, F6 edit, F7 delete. `←`/`→` month, `,`/`.` day, `a` all, `t` today. Date and all-day in event form.
 
-**Tasks:** F5 new, F6 edit, F7 delete. `space` toggle done, `Ctrl+↑`/`Ctrl+↓` reorder.
+**Tasks:** F5 new, F6 edit, F7 delete. `space` toggle done. `/` search, `Shift+F` filter (all/incomplete/complete), `Shift+S` sort (created/due/priority/title). Completed tasks stay in place.
 
-**Notes / Contacts:** F5 new, F6 edit, F7 delete. First line = title. Form: Enter next field, F10 save, F11 cancel.
+**Notes:** F5 new, F6 edit, F7 delete. Double Enter (empty line) saves. First line = title.
+
+**Contacts:** F5 new, F6 edit, F7 delete. Multi-column card layout when terminal is wide.
+
+**Trash:** View soft-deleted items. `R` restore, `F5` refresh.
 
 ---
 
@@ -117,15 +141,22 @@ Optional config file (uses defaults if missing):
 
 ```
 vibe/
-├── cmd/vibe/main.go       # Entry point
+├── cmd/
+│   ├── vibe/main.go       # Entry point
+│   └── vibe-seed/         # Demo data seeder (Star Wars theme)
 ├── internal/
 │   ├── app/               # Bubble Tea model, layout, navigation
 │   ├── calendar/          # Calendar view (month grid, events, CRUD)
 │   ├── config/            # JSON config loader
-│   ├── db/                # SQLite connection, migrations, calendar repo
-│   └── ui/
-│       ├── styles.go      # Lipgloss styles
-│       └── views/         # Module views (Notes, Tasks, Contacts placeholders)
+│   ├── contacts/          # Contacts view (card layout, multi-column when wide)
+│   ├── dataview/          # Reusable grid/table component
+│   ├── db/                # SQLite connection, migrations, repos
+│   ├── notes/             # Notes view
+│   ├── tasks/             # Tasks view (search, filter, sort)
+│   ├── toast/             # Transient notifications for CRUD feedback
+│   ├── trash/             # Trashcan view (soft-deleted items)
+│   └── ui/                # Shared styles, pretty-time helpers
+├── Makefile               # build, build-demo, clean, test
 ├── go.mod
 ├── PLAN.md                # Architecture and roadmap
 └── README.md
@@ -151,8 +182,11 @@ See [PLAN.md](PLAN.md) for the full architecture, schema, and implementation pha
 - [x] SQLite backend and migrations (calendar_events)
 - [x] Calendar: month grid, event list, add/edit/delete, time, notes, attendees
 - [x] Tasks: list, add/edit/delete, toggle done, reorder
-- [x] Notes: list, add/edit/delete (first line=title, rest=content)
-- [x] Contacts: list, add/edit/delete (name, email, phone, notes)
+- [x] Notes: list, add/edit/delete, double-Enter saves
+- [x] Contacts: card view, multi-column when wide
+- [x] Trash: soft-delete, restore
+- [x] Tasks: search, filter, sort, pretty date
+- [x] Demo: `make build-demo`, `VIBE_DB=./vibe-demo.db ./vibePDA`
 - [ ] External editor integration, themes
 
 ---

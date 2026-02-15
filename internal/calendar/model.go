@@ -14,11 +14,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/you/vibe/internal/db"
+	"github.com/you/vibe/internal/toast"
 )
 
 const (
-	sidebarWidth = 20
-	listHeight   = 8
+	sidebarWidth       = 20
+	listHeight         = 8
+	attendeeCardHeight = 5
+	attendeeCardWidth  = 34
+	attendeeNotesLen   = 40
 )
 
 // eventItem implements list.Item for the event list.
@@ -69,10 +73,12 @@ var (
 			Foreground(lipgloss.Color("15")).
 			Background(lipgloss.Color("241")).
 			Padding(0, 1)
+	attendeeCardNameStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+	attendeeCardLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 )
 
-// Form steps: 0=title, 1=start, 2=end, 3=notes, 4=attendees
-const formSteps = 5
+// Form steps: 0=title, 1=date, 2=start, 3=end, 4=all-day, 5=notes, 6=attendees
+const formSteps = 7
 
 // attendeeItem for contacts list in attendees step.
 type attendeeItem struct {
@@ -90,23 +96,71 @@ func (a attendeeItem) Title() string {
 func (a attendeeItem) Description() string { return a.contact.Email }
 func (a attendeeItem) FilterValue() string { return a.contact.Name }
 
+// truncateShort shortens s to n runes with "…" if truncated.
+func truncateShort(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n-1]) + "…"
+}
+
+// truncateNotes shortens s to n runes; if truncated, ends with "...more"
+func truncateNotes(s string, n int) string {
+	runes := []rune(strings.TrimSpace(s))
+	if len(runes) == 0 {
+		return ""
+	}
+	if len(runes) <= n {
+		return string(runes)
+	}
+	return string(runes[:n]) + "...more"
+}
+
 type attendeeDelegate struct{}
 
-func (d attendeeDelegate) Height() int                             { return 1 }
-func (d attendeeDelegate) Spacing() int                            { return 0 }
+func (d attendeeDelegate) Height() int                             { return attendeeCardHeight }
+func (d attendeeDelegate) Spacing() int                            { return 1 }
 func (d attendeeDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 func (d attendeeDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
 	a, ok := item.(attendeeItem)
 	if !ok {
 		return
 	}
-	str := a.Title()
-	if index == m.Index() {
-		str = selectedStyle.Render("▶ " + str)
-	} else {
-		str = unselectedStyle.Render("  " + str)
+	c := a.contact
+	selected := index == m.Index()
+
+	// Card content: Name (with ✓), Email, Phone, Notes (truncated with "...more")
+	mark := " "
+	if a.selected {
+		mark = "✓"
 	}
-	io.WriteString(w, str)
+	name := c.Name
+	if name == "" {
+		name = "(no name)"
+	}
+	lines := []string{
+		attendeeCardNameStyle.Render(mark + " " + name),
+	}
+	if c.Email != "" {
+		lines = append(lines, attendeeCardLabelStyle.Render("  ")+truncateShort(c.Email, attendeeCardWidth-4))
+	}
+	if c.Phone != "" {
+		lines = append(lines, attendeeCardLabelStyle.Render("  ")+truncateShort(c.Phone, attendeeCardWidth-4))
+	}
+	if c.Notes != "" {
+		notes := truncateNotes(c.Notes, attendeeNotesLen)
+		lines = append(lines, attendeeCardLabelStyle.Render("  ")+notes)
+	}
+	content := strings.Join(lines, "\n")
+
+	box := lipgloss.NewStyle().Width(attendeeCardWidth + 4).Padding(0, 1)
+	if selected {
+		box = box.Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("62")).Background(lipgloss.Color("236"))
+	} else {
+		box = box.Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240"))
+	}
+	io.WriteString(w, box.Render(content))
 }
 
 // Model is the calendar view model.
@@ -122,12 +176,17 @@ type Model struct {
 	attendeeList  list.Model
 	width         int
 	height        int
-	err           string
-	showForm      bool
-	formStep      int
+	err             string
+	showForm        bool
+	showViewEvent   bool
+	viewEvent       *db.Event
+	viewAttendees   []string // names for read-only view
+	formStep        int
 	formTitle     string
+	formDate      string // YYYY-MM-DD
 	formStart     string
 	formEnd       string
+	formAllDay    bool
 	formNotes     string
 	formAttendees []int64
 	formEditID    int64
@@ -155,9 +214,9 @@ func NewModel(repo *db.CalendarRepo, contactsRepo *db.ContactsRepo, width, heigh
 	ta.SetWidth(50)
 	ta.SetHeight(4)
 
-	al := list.New([]list.Item{}, attendeeDelegate{}, width-4, 6)
+	al := list.New([]list.Item{}, attendeeDelegate{}, width-4, 14)
 	al.SetShowStatusBar(false)
-	al.SetFilteringEnabled(false)
+	al.SetFilteringEnabled(true)  // Type to filter/search contacts
 	al.SetShowHelp(false)
 	al.DisableQuitKeybindings()
 
@@ -206,6 +265,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.err = msg.err.Error()
 		return m, nil
 	case tea.KeyMsg:
+		if m.showViewEvent {
+			if msg.String() == "esc" || msg.String() == "escape" || msg.String() == "enter" {
+				m.showViewEvent = false
+				m.viewEvent = nil
+				m.viewAttendees = nil
+				return m, nil
+			}
+			return m, nil
+		}
 		if m.showForm {
 			return m.handleFormKey(msg)
 		}
@@ -243,10 +311,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case "j", "down":
 			var cmd tea.Cmd
 			m.eventList, cmd = m.eventList.Update(msg)
+			m.syncCalendarToSelectedEvent()
 			return m, cmd
 		case "k", "up":
 			var cmd tea.Cmd
 			m.eventList, cmd = m.eventList.Update(msg)
+			m.syncCalendarToSelectedEvent()
 			return m, cmd
 		case "enter":
 			// Open edit form for selected event
@@ -260,7 +330,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.eventList.SetSize(msg.Width-10, listHeight)
+		listH := msg.Height - 6
+		if listH < 4 {
+			listH = 4
+		}
+		m.eventList.SetSize(msg.Width-10, listH)
 		return m, nil
 	}
 
@@ -278,8 +352,10 @@ func (m *Model) openForm(e *db.Event) {
 	if e != nil {
 		m.formEditID = e.ID
 		m.formTitle = e.Title
+		m.formDate = e.StartAt.Format("2006-01-02")
 		m.formStart = e.StartAt.Format("15:04")
 		m.formEnd = e.EndAt.Format("15:04")
+		m.formAllDay = e.AllDay
 		m.formNotes = e.Description
 		m.year = e.StartAt.Year()
 		m.month = e.StartAt.Month()
@@ -289,14 +365,16 @@ func (m *Model) openForm(e *db.Event) {
 		}
 	} else {
 		m.formTitle = ""
-		m.formStart = "09:00"
-		m.formEnd = "10:00"
 		if m.day == 0 {
 			now := time.Now()
 			m.year = now.Year()
 			m.month = now.Month()
 			m.day = now.Day()
 		}
+		m.formDate = time.Date(m.year, m.month, m.day, 0, 0, 0, 0, time.Local).Format("2006-01-02")
+		m.formStart = "09:00"
+		m.formEnd = "10:00"
+		m.formAllDay = false
 	}
 	m.formInput.SetValue(m.formTitle)
 	m.formInput.Placeholder = "Meeting with team"
@@ -322,26 +400,44 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// In notes field (step 3): Tab and Enter pass through to textarea
-	if m.formStep == 3 {
+	// Step 4: all-day - space toggles, Enter advances to notes
+	if m.formStep == 4 {
+		if s == " " {
+			m.formAllDay = !m.formAllDay
+			return m, nil
+		}
+		if s == "enter" {
+			return m.formAdvance()
+		}
+	}
+
+	// In notes field (step 5): Tab passes through; double Enter saves
+	if m.formStep == 5 {
+		if s == "enter" {
+			val := m.formTextarea.Value()
+			if strings.HasSuffix(val, "\n") {
+				// Double Enter (empty line) = save
+				return m.formSave()
+			}
+		}
 		var cmd tea.Cmd
 		m.formTextarea, cmd = m.formTextarea.Update(msg)
 		return m, cmd
 	}
 
-	// Tab: in notes (step 3) pass through; else advance. Ctrl+Tab: notes -> attendees.
+	// Tab: in notes (step 5) pass through; else advance. Ctrl+Tab: notes -> attendees.
 	switch s {
 	case "tab":
-		if m.formStep == 3 {
+		if m.formStep == 5 {
 			var cmd tea.Cmd
 			m.formTextarea, cmd = m.formTextarea.Update(msg)
 			return m, cmd
 		}
 		return m.formTabForward()
 	case "ctrl+tab":
-		if m.formStep == 3 && m.contactsRepo != nil {
+		if m.formStep == 5 && m.contactsRepo != nil {
 			m.formNotes = strings.TrimSpace(m.formTextarea.Value())
-			m.formStep = 4
+			m.formStep = 6
 			m.formTextarea.Blur()
 			m.refreshAttendeeList()
 			return m, nil
@@ -353,25 +449,26 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m.formAdvance()
 	}
 
-	// Step 4: attendees - space toggles, Enter/Tab saves
-	if m.formStep == 4 {
+	// Step 6: attendees - space toggle, Enter/Tab save, type to filter, j/k navigate
+	if m.formStep == 6 {
 		switch s {
 		case " ":
 			m.toggleAttendee()
 			return m, nil
-		case "j", "down":
-			var cmd tea.Cmd
-			m.attendeeList, cmd = m.attendeeList.Update(msg)
-			return m, cmd
-		case "k", "up":
+		case "enter", "tab":
+			return m.formSave()
+		case "j", "down", "k", "up":
 			var cmd tea.Cmd
 			m.attendeeList, cmd = m.attendeeList.Update(msg)
 			return m, cmd
 		}
-		return m, nil
+		// Pass typing keys to list for filtering (autocomplete/search contacts)
+		var cmd tea.Cmd
+		m.attendeeList, cmd = m.attendeeList.Update(msg)
+		return m, cmd
 	}
 
-	// Route to textinput for steps 0, 1, 2
+	// Route to textinput for steps 0, 1, 2, 3 (title, date, start, end)
 	var cmd tea.Cmd
 	m.formInput, cmd = m.formInput.Update(msg)
 	return m, cmd
@@ -403,39 +500,53 @@ func (m Model) formAdvance() (Model, tea.Cmd) {
 		if val != "" {
 			m.formTitle = val
 			m.formStep = 1
+			m.formInput.SetValue(m.formDate)
+			m.formInput.Placeholder = "2006-01-02"
+			return m, nil
+		}
+	case 1:
+		if yr, mon, d, ok := parseDate(val); ok {
+			m.formDate = val
+			m.year, m.month, m.day = yr, mon, d
+			m.formStep = 2
 			m.formInput.SetValue(m.formStart)
 			m.formInput.Placeholder = "09:00"
 			return m, nil
 		}
-	case 1:
+		m.err = "Invalid date (use YYYY-MM-DD)"
+	case 2:
 		if _, ok := parseTime(val); ok {
 			m.formStart = val
-			m.formStep = 2
+			m.formStep = 3
 			m.formInput.SetValue(m.formEnd)
 			m.formInput.Placeholder = "10:00"
 			return m, nil
 		}
 		m.err = "Invalid time (use HH:MM)"
-	case 2:
+	case 3:
 		if _, ok := parseTime(val); ok {
 			m.formEnd = val
-			m.formStep = 3
-			m.formTextarea.SetValue(m.formNotes)
-			m.formTextarea.Focus()
-			m.formInput.Blur()
-			return m, textarea.Blink
+			m.formStep = 4
+			// Step 4 is all-day (no input field); Enter will advance from handleFormKey
+			return m, nil
 		}
 		m.err = "Invalid time (use HH:MM)"
-	case 3:
+	case 4:
+		// All-day step: Enter advances to notes
+		m.formStep = 5
+		m.formTextarea.SetValue(m.formNotes)
+		m.formTextarea.Focus()
+		m.formInput.Blur()
+		return m, textarea.Blink
+	case 5:
 		m.formNotes = strings.TrimSpace(m.formTextarea.Value())
 		if m.contactsRepo != nil {
-			m.formStep = 4
+			m.formStep = 6
 			m.formTextarea.Blur()
 			m.refreshAttendeeList()
 		} else {
 			return m.formSave()
 		}
-		// Tab from step 3 goes to textarea; Ctrl+Tab advances to step 4
 	}
 	return m, nil
 }
@@ -488,22 +599,29 @@ func (m *Model) focusFormField() {
 	m.formInput.Blur()
 	m.formTextarea.Blur()
 	switch m.formStep {
-	case 4:
+	case 6:
 		// Attendees list - no focus change needed
+		return
+	case 4:
+		// All-day step - no input field
 		return
 	case 0:
 		m.formInput.SetValue(m.formTitle)
 		m.formInput.Placeholder = "Meeting with team"
 		m.formInput.Focus()
 	case 1:
+		m.formInput.SetValue(m.formDate)
+		m.formInput.Placeholder = "2006-01-02"
+		m.formInput.Focus()
+	case 2:
 		m.formInput.SetValue(m.formStart)
 		m.formInput.Placeholder = "09:00"
 		m.formInput.Focus()
-	case 2:
+	case 3:
 		m.formInput.SetValue(m.formEnd)
 		m.formInput.Placeholder = "10:00"
 		m.formInput.Focus()
-	case 3:
+	case 5:
 		m.formTextarea.SetValue(m.formNotes)
 		m.formTextarea.Focus()
 	}
@@ -511,19 +629,29 @@ func (m *Model) focusFormField() {
 
 func (m Model) formSave() (Model, tea.Cmd) {
 	m.formNotes = strings.TrimSpace(m.formTextarea.Value())
+	yr, mon, d, dateOk := parseDate(strings.TrimSpace(m.formDate))
+	if !dateOk {
+		m.err = "Invalid date (use YYYY-MM-DD)"
+		return m, nil
+	}
 	startT, ok1 := parseTime(strings.TrimSpace(m.formStart))
 	endT, ok2 := parseTime(strings.TrimSpace(m.formEnd))
 	if !ok1 || !ok2 {
 		m.err = "Invalid time (use HH:MM)"
 		return m, nil
 	}
-	yr, mon, d := m.year, m.month, m.day
+	startAt := time.Date(yr, mon, d, startT/100, startT%100, 0, 0, time.Local)
+	endAt := time.Date(yr, mon, d, endT/100, endT%100, 0, 0, time.Local)
+	if m.formAllDay {
+		startAt = time.Date(yr, mon, d, 0, 0, 0, 0, time.Local)
+		endAt = time.Date(yr, mon, d, 23, 59, 59, 0, time.Local)
+	}
 	e := &db.Event{
 		Title:       m.formTitle,
 		Description: m.formNotes,
-		StartAt:     time.Date(yr, mon, d, startT/100, startT%100, 0, 0, time.Local),
-		EndAt:       time.Date(yr, mon, d, endT/100, endT%100, 0, 0, time.Local),
-		AllDay:      false,
+		StartAt:     startAt,
+		EndAt:       endAt,
+		AllDay:      m.formAllDay,
 	}
 	if m.formEditID != 0 {
 		e.ID = m.formEditID
@@ -547,8 +675,23 @@ func (m Model) formSave() (Model, tea.Cmd) {
 	m.formInput.Blur()
 	m.formTextarea.Blur()
 	m.err = ""
+	m.showViewEvent = true
+	m.viewEvent = e
+	m.viewAttendees = nil
+	if m.contactsRepo != nil {
+		ids, _ := m.repo.ListAttendees(e.ID)
+		for _, cid := range ids {
+			if c, err := m.contactsRepo.Get(cid); err == nil && c != nil {
+				m.viewAttendees = append(m.viewAttendees, c.Name)
+			}
+		}
+	}
 	m.refreshEventList()
-	return m, m.loadEvents
+	msg := "Event saved"
+	if m.formEditID != 0 {
+		msg = "Event updated"
+	}
+	return m, tea.Batch(m.loadEvents, func() tea.Msg { return toast.Msg{Text: msg} })
 }
 
 // parseTime parses HH:MM or HHMM, returns hour*100+min and ok.
@@ -573,6 +716,15 @@ func parseTime(s string) (int, bool) {
 	return 0, false
 }
 
+// parseDate parses YYYY-MM-DD, returns year, month, day and ok.
+func parseDate(s string) (year int, month time.Month, day int, ok bool) {
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	return t.Year(), t.Month(), t.Day(), true
+}
+
 func (m Model) handleDelete() (Model, tea.Cmd) {
 	item := m.eventList.SelectedItem()
 	if item == nil {
@@ -584,11 +736,11 @@ func (m Model) handleDelete() (Model, tea.Cmd) {
 	}
 	if err := m.repo.Delete(ei.event.ID); err != nil {
 		m.err = err.Error()
-	} else {
-		m.err = ""
+		return m, nil
 	}
+	m.err = ""
 	m.refreshEventList()
-	return m, m.loadEvents
+	return m, tea.Batch(m.loadEvents, func() tea.Msg { return toast.Msg{Text: "Event deleted"} })
 }
 
 func (m *Model) prevMonth() {
@@ -651,11 +803,64 @@ func (m *Model) refreshEventList() {
 	m.eventList.SetItems(items)
 }
 
+// syncCalendarToSelectedEvent updates year/month/day to the selected event's date (vice versa: list → calendar).
+func (m *Model) syncCalendarToSelectedEvent() {
+	item := m.eventList.SelectedItem()
+	if item == nil {
+		return
+	}
+	ei, ok := item.(eventItem)
+	if !ok {
+		return
+	}
+	m.year = ei.event.StartAt.Year()
+	m.month = ei.event.StartAt.Month()
+	m.day = ei.event.StartAt.Day()
+	m.refreshEventList()
+	// Keep selection on the same event in the refreshed list
+	items := m.eventList.Items()
+	for i := range items {
+		if eit, ok := items[i].(eventItem); ok && eit.event.ID == ei.event.ID {
+			m.eventList.Select(i)
+			break
+		}
+	}
+}
+
 // SetSize updates width/height.
 func (m *Model) SetSize(w, h int) {
 	m.width = w
 	m.height = h
-	m.eventList.SetSize(w-10, listHeight)
+	listH := h - 6
+	if listH < 4 {
+		listH = 4
+	}
+	m.eventList.SetSize(w-10, listH)
+}
+
+// StatusHint returns context-specific key bindings for the status bar.
+func (m Model) StatusHint() string {
+	if m.showViewEvent {
+		return "Enter/Esc close"
+	}
+	if m.showForm {
+		switch m.formStep {
+		case 0:
+			return "Enter next  F10 save  F11 cancel"
+		case 1, 2, 3:
+			return "Enter next  F10 save  F11 cancel"
+		case 4:
+			return "Space toggle all-day  Enter next  F10 save  F11 cancel"
+		case 5:
+			if m.contactsRepo != nil {
+				return "Tab indent  Ctrl+Tab attendees  Enter² save  F10 save  F11 cancel"
+			}
+			return "Enter² save  F10 save  F11 cancel"
+		case 6:
+			return "Type filter  Space toggle  Enter save  F10 save  F11 cancel"
+		}
+	}
+	return "←/→ month  ,/. day  a all  t today  F5 new  F6 edit  F7 del"
 }
 
 // View renders the calendar UI.
@@ -664,6 +869,29 @@ func (m Model) View() string {
 
 	if m.err != "" {
 		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("Error: "+m.err) + "\n")
+	}
+
+	if m.showViewEvent && m.viewEvent != nil {
+		e := m.viewEvent
+		b.WriteString(titleStyle.Render(" Event ") + "\n\n")
+		b.WriteString("Title: " + e.Title + "\n")
+		b.WriteString("Date:  " + e.StartAt.Format("Mon Jan 2, 2006") + "\n")
+		if e.AllDay {
+			b.WriteString("All day: yes\n")
+		} else {
+			b.WriteString("Start: " + e.StartAt.Format("15:04") + "  End: " + e.EndAt.Format("15:04") + "\n")
+		}
+		b.WriteString("Notes:\n")
+		if e.Description != "" {
+			b.WriteString(e.Description + "\n")
+		} else {
+			b.WriteString("(none)\n")
+		}
+		if len(m.viewAttendees) > 0 {
+			b.WriteString("\nAttendees: " + strings.Join(m.viewAttendees, ", ") + "\n")
+		}
+		b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("Enter or Esc to close") + "\n")
+		return b.String()
 	}
 
 	if m.showForm {
@@ -678,20 +906,35 @@ func (m Model) View() string {
 		} else {
 			b.WriteString(m.formTitle + "\n")
 		}
-		b.WriteString("Start (HH:MM): ")
+		b.WriteString("Date (YYYY-MM-DD): ")
 		if m.formStep == 1 {
+			b.WriteString(m.formInput.View() + "\n")
+		} else {
+			b.WriteString(m.formDate + "\n")
+		}
+		b.WriteString("Start (HH:MM): ")
+		if m.formStep == 2 {
 			b.WriteString(m.formInput.View() + "\n")
 		} else {
 			b.WriteString(m.formStart + "\n")
 		}
 		b.WriteString("End (HH:MM): ")
-		if m.formStep == 2 {
+		if m.formStep == 3 {
 			b.WriteString(m.formInput.View() + "\n")
 		} else {
 			b.WriteString(m.formEnd + "\n")
 		}
+		allDayMark := " "
+		if m.formAllDay {
+			allDayMark = "x"
+		}
+		b.WriteString("All day: [" + allDayMark + "] (space to toggle)")
+		if m.formStep == 4 {
+			b.WriteString("  ←")
+		}
+		b.WriteString("\n")
 		b.WriteString("Notes:\n")
-		if m.formStep == 3 {
+		if m.formStep == 5 {
 			b.WriteString(m.formTextarea.View() + "\n")
 		} else {
 			b.WriteString(m.formNotes)
@@ -700,17 +943,10 @@ func (m Model) View() string {
 			}
 			b.WriteString("\n")
 		}
-		if m.formStep == 4 && m.contactsRepo != nil {
-			b.WriteString("Attendees (space to toggle):\n")
+		if m.formStep == 6 && m.contactsRepo != nil {
+			b.WriteString("\nAttendees (type to filter, space to toggle):\n")
 			b.WriteString(m.attendeeList.View())
 		}
-		help := "Enter: next  F2: save  Esc: cancel"
-		if m.formStep == 3 && m.contactsRepo != nil {
-			help = "Tab: indent  Ctrl+Tab: attendees  F2: save  Esc: cancel"
-		} else if m.formStep == 4 {
-			help = "Space: toggle  F2: save  Esc: cancel"
-		}
-		b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(help))
 		return b.String()
 	}
 
@@ -729,8 +965,6 @@ func (m Model) View() string {
 	}
 	b.WriteString(titleStyle.Render(" "+dayLabel+" ") + "\n")
 	b.WriteString(m.eventList.View())
-
-	b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(" ←/→ month  ,/. prev/next day  a all  t today  n new  d delete  j/k select "))
 
 	return b.String()
 }

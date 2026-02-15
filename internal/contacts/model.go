@@ -9,13 +9,19 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/you/vibe/internal/db"
+	"github.com/you/vibe/internal/toast"
 )
 
 const (
-	listHeight     = 18
-	cardHeight     = 6
-	cardInnerWidth = 36
-	maxNotesLen    = 60
+	listHeight      = 18
+	cardHeight      = 6
+	cardInnerWidth  = 36
+	cardOuterWidth  = cardInnerWidth + 4
+	cardGap         = 2
+	maxNotesLen     = 60
+	minWidth2Cols   = 2*cardOuterWidth + cardGap + 10 // ~90
+	minWidth3Cols   = 3*cardOuterWidth + 2*cardGap + 10
+	minWidth4Cols   = 4*cardOuterWidth + 3*cardGap + 10
 )
 
 // truncate shortens s to at most n runes, adding "…" if truncated.
@@ -39,24 +45,29 @@ func (i contactItem) FilterValue() string { return i.contact.Name }
 type contactDelegate struct{}
 
 func (d contactDelegate) Height() int                             { return cardHeight }
-func (d contactDelegate) Spacing() int                            { return 1 }
+func (d contactDelegate) Spacing() int                            { return 0 }
 func (d contactDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 func (d contactDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
 	i, ok := item.(contactItem)
 	if !ok {
 		return
 	}
-	c := i.contact
-	selected := index == m.Index()
+	io.WriteString(w, renderContactCard(i.contact, index == m.Index()))
+}
 
-	// Build card content: Name, Email, Phone, Notes
+var (
+	titleStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
+	cardNameStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+	cardLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+)
+
+// renderContactCard returns a single contact card as a string.
+func renderContactCard(c *db.Contact, selected bool) string {
 	name := truncate(c.Name, cardInnerWidth-2)
 	if name == "" {
 		name = "(no name)"
 	}
-	lines := []string{
-		cardNameStyle.Render(name),
-	}
+	lines := []string{cardNameStyle.Render(name)}
 	if c.Email != "" {
 		lines = append(lines, cardLabelStyle.Render("Email:")+" "+truncate(c.Email, cardInnerWidth-10))
 	}
@@ -67,21 +78,14 @@ func (d contactDelegate) Render(w io.Writer, m list.Model, index int, item list.
 		lines = append(lines, cardLabelStyle.Render("Notes:")+" "+truncate(c.Notes, maxNotesLen))
 	}
 	content := strings.Join(lines, "\n")
-
-	box := lipgloss.NewStyle().Width(cardInnerWidth + 4).Padding(0, 1)
+	box := lipgloss.NewStyle().Width(cardOuterWidth).Padding(0, 1)
 	if selected {
 		box = box.Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("62")).Background(lipgloss.Color("236"))
 	} else {
 		box = box.Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240"))
 	}
-	io.WriteString(w, box.Render(content))
+	return box.Render(content)
 }
-
-var (
-	titleStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
-	cardNameStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
-	cardLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-)
 
 // Form steps: 0=name, 1=email, 2=phone, 3=notes
 const contactFormSteps = 4
@@ -180,7 +184,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.contactList.SetSize(msg.Width-10, listHeight)
+		availH := msg.Height - 4
+		if availH < 4 {
+			availH = 4
+		}
+		m.contactList.SetSize(msg.Width-10, availH)
 		return m, nil
 	}
 
@@ -302,6 +310,8 @@ func (m Model) formSave() (Model, tea.Cmd) {
 				m.showForm = false
 				m.formInput.Blur()
 				m.err = ""
+				m.refreshList(nil)
+				return m, tea.Batch(m.loadContacts, func() tea.Msg { return toast.Msg{Text: "Contact updated"} })
 			}
 		}
 	} else {
@@ -312,6 +322,8 @@ func (m Model) formSave() (Model, tea.Cmd) {
 			m.showForm = false
 			m.formInput.Blur()
 			m.err = ""
+			m.refreshList(nil)
+			return m, tea.Batch(m.loadContacts, func() tea.Msg { return toast.Msg{Text: "Contact created"} })
 		}
 	}
 	m.refreshList(nil)
@@ -329,11 +341,11 @@ func (m Model) handleDelete() (Model, tea.Cmd) {
 	}
 	if err := m.repo.Delete(ci.contact.ID); err != nil {
 		m.err = err.Error()
-	} else {
-		m.err = ""
+		return m, nil
 	}
+	m.err = ""
 	m.refreshList(nil)
-	return m, m.loadContacts
+	return m, tea.Batch(m.loadContacts, func() tea.Msg { return toast.Msg{Text: "Contact deleted"} })
 }
 
 func (m *Model) refreshList(contacts []db.Contact) {
@@ -355,7 +367,20 @@ func (m *Model) refreshList(contacts []db.Contact) {
 func (m *Model) SetSize(w, h int) {
 	m.width = w
 	m.height = h
-	m.contactList.SetSize(w-10, listHeight)
+	// Use available height minus title (2) and help (1); min 4 lines visible
+	availH := h - 4
+	if availH < 4 {
+		availH = 4
+	}
+	m.contactList.SetSize(w-10, availH)
+}
+
+// StatusHint returns context-specific key bindings for the status bar.
+func (m Model) StatusHint() string {
+	if m.showForm {
+		return "Enter next  Tab next  F10 save  F11 cancel"
+	}
+	return "F5 new  F6 edit  F7 del"
 }
 
 // View renders the contacts UI.
@@ -381,13 +406,52 @@ func (m Model) View() string {
 				b.WriteString(labels[i] + " " + values[i] + "\n")
 			}
 		}
-		b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("Enter: next  Shift+Tab: back  F2: save  Esc: cancel"))
 		return b.String()
 	}
 
 	b.WriteString(titleStyle.Render(" Contacts ") + "\n\n")
-	b.WriteString(m.contactList.View())
-	b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(" n new  Enter edit  d delete  j/k select "))
+
+	// Multi-column layout when terminal is wide enough
+	if m.width >= minWidth2Cols {
+		b.WriteString(m.renderGrid())
+	} else {
+		b.WriteString(m.contactList.View())
+	}
 
 	return b.String()
+}
+
+// renderGrid lays out contact cards in multiple columns (2–4 based on width).
+func (m Model) renderGrid() string {
+	items := m.contactList.Items()
+	if len(items) == 0 {
+		return ""
+	}
+	sel := m.contactList.Index()
+
+	cols := 2
+	if m.width >= minWidth4Cols {
+		cols = 4
+	} else if m.width >= minWidth3Cols {
+		cols = 3
+	}
+
+	gap := strings.Repeat(" ", cardGap)
+	var rows []string
+	for i := 0; i < len(items); i += cols {
+		var parts []string
+		for j := 0; j < cols && i+j < len(items); j++ {
+			if j > 0 {
+				parts = append(parts, gap)
+			}
+			idx := i + j
+			ci, ok := items[idx].(contactItem)
+			if !ok {
+				continue
+			}
+			parts = append(parts, renderContactCard(ci.contact, idx == sel))
+		}
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, parts...))
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }

@@ -4,7 +4,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Placeholder content for each module (Outlook-style "folder" views)
+// Placeholder content for each module (used when module models are inactive)
 var PlaceholderStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("245")).
 	Italic(true)

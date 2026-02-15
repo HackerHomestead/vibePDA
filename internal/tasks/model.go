@@ -1,7 +1,9 @@
 package tasks
 
 import (
+	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -9,9 +11,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/you/vibe/internal/db"
+	"github.com/you/vibe/internal/toast"
+	"github.com/you/vibe/internal/ui"
 )
 
 const listHeight = 14
+
+// filterShow: 0=all, 1=incomplete, 2=complete
+// sortBy: "created" | "due" | "priority" | "title"
 
 // taskItem implements list.Item.
 type taskItem struct {
@@ -26,10 +33,16 @@ func (i taskItem) Title() string {
 	return prefix + i.task.Title
 }
 func (i taskItem) Description() string {
+	parts := []string{}
 	if i.task.DueDate != nil {
-		return "Due: " + i.task.DueDate.Format("2006-01-02")
+		parts = append(parts, "Due: "+i.task.DueDate.Format("2006-01-02"))
 	}
-	return ""
+	ts := i.task.UpdatedAt
+	if ts.IsZero() {
+		ts = i.task.CreatedAt
+	}
+	parts = append(parts, ui.PrettyTime(ts))
+	return strings.Join(parts, " · ")
 }
 func (i taskItem) FilterValue() string { return i.task.Title }
 
@@ -44,13 +57,16 @@ func (d taskDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 	if !ok {
 		return
 	}
-	str := i.Title()
-	if index == m.Index() {
-		str = selectedStyle.Render("▶ " + str)
-	} else {
-		str = unselectedStyle.Render("  " + str)
+	line := i.Title()
+	if desc := i.Description(); desc != "" {
+		line += "  " + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(desc)
 	}
-	io.WriteString(w, str)
+	if index == m.Index() {
+		line = selectedStyle.Render("▶ " + line)
+	} else {
+		line = unselectedStyle.Render("  " + line)
+	}
+	io.WriteString(w, line+"\n")
 }
 
 var (
@@ -72,6 +88,8 @@ type Model struct {
 	showForm   bool
 	formEditID int64 // 0=new, else edit
 	formInput  textinput.Model
+	filterShow int    // 0=all, 1=incomplete, 2=complete
+	sortBy     string // "created"|"due"|"priority"|"title"
 }
 
 // NewModel creates a new tasks model.
@@ -81,7 +99,7 @@ func NewModel(repo *db.TasksRepo, width, height int) Model {
 	l := list.New(items, delegate, width-4, listHeight)
 	l.Title = ""
 	l.SetShowStatusBar(false)
-	l.SetFilteringEnabled(false)
+	l.SetFilteringEnabled(true)
 	l.SetShowHelp(false)
 	l.DisableQuitKeybindings()
 
@@ -90,11 +108,13 @@ func NewModel(repo *db.TasksRepo, width, height int) Model {
 	ti.Width = 40
 
 	return Model{
-		repo:      repo,
-		taskList:  l,
-		formInput: ti,
-		width:     width,
-		height:    height,
+		repo:       repo,
+		taskList:   l,
+		formInput:  ti,
+		width:      width,
+		height:     height,
+		filterShow: 0,
+		sortBy:     "created",
 	}
 }
 
@@ -153,6 +173,22 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m.handleMoveUp()
 		case "ctrl+down":
 			return m.handleMoveDown()
+		case "F": // Shift+f: cycle filter (all/incomplete/complete)
+			m.filterShow = (m.filterShow + 1) % 3
+			m.refreshList(nil)
+			return m, nil
+		case "S": // Shift+s: cycle sort
+			sorts := []string{"created", "due", "priority", "title"}
+			next := 0
+			for i, x := range sorts {
+				if x == m.sortBy {
+					next = (i + 1) % len(sorts)
+					break
+				}
+			}
+			m.sortBy = sorts[next]
+			m.refreshList(nil)
+			return m, nil
 		case "j", "down":
 			var cmd tea.Cmd
 			m.taskList, cmd = m.taskList.Update(msg)
@@ -165,7 +201,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.taskList.SetSize(msg.Width-10, listHeight)
+		listH := msg.Height - 6
+		if listH < 4 {
+			listH = 4
+		}
+		m.taskList.SetSize(msg.Width-10, listH)
 		return m, nil
 	}
 
@@ -193,6 +233,8 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 						m.showForm = false
 						m.formInput.Blur()
 						m.err = ""
+						m.refreshList(nil)
+						return m, tea.Batch(m.loadTasks, func() tea.Msg { return toast.Msg{Text: "Task updated"} })
 					}
 				}
 			} else {
@@ -203,6 +245,8 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 					m.showForm = false
 					m.formInput.Blur()
 					m.err = ""
+					m.refreshList(nil)
+					return m, tea.Batch(m.loadTasks, func() tea.Msg { return toast.Msg{Text: "Task created"} })
 				}
 			}
 			m.refreshList(nil)
@@ -263,11 +307,11 @@ func (m Model) handleDelete() (Model, tea.Cmd) {
 	}
 	if err := m.repo.Delete(ti.task.ID); err != nil {
 		m.err = err.Error()
-	} else {
-		m.err = ""
+		return m, nil
 	}
+	m.err = ""
 	m.refreshList(nil)
-	return m, m.loadTasks
+	return m, tea.Batch(m.loadTasks, func() tea.Msg { return toast.Msg{Text: "Task deleted"} })
 }
 
 func (m Model) handleToggle() (Model, tea.Cmd) {
@@ -296,9 +340,56 @@ func (m *Model) refreshList(tasks []db.Task) {
 			return
 		}
 	}
-	items := make([]list.Item, len(tasks))
-	for i := range tasks {
-		items[i] = taskItem{task: &tasks[i]}
+	// Filter by done status
+	var filtered []db.Task
+	switch m.filterShow {
+	case 1: // incomplete
+		for i := range tasks {
+			if !tasks[i].Done {
+				filtered = append(filtered, tasks[i])
+			}
+		}
+	case 2: // complete
+		for i := range tasks {
+			if tasks[i].Done {
+				filtered = append(filtered, tasks[i])
+			}
+		}
+	default: // all
+		filtered = tasks
+	}
+	// Sort
+	sort.Slice(filtered, func(i, j int) bool {
+		a, b := &filtered[i], &filtered[j]
+		switch m.sortBy {
+		case "due":
+			if a.DueDate == nil && b.DueDate == nil {
+				return a.ID < b.ID
+			}
+			if a.DueDate == nil {
+				return false
+			}
+			if b.DueDate == nil {
+				return true
+			}
+			return a.DueDate.Before(*b.DueDate)
+		case "priority":
+			if a.Priority != b.Priority {
+				return a.Priority > b.Priority
+			}
+			return a.ID < b.ID
+		case "title":
+			if a.Title != b.Title {
+				return strings.ToLower(a.Title) < strings.ToLower(b.Title)
+			}
+			return a.ID < b.ID
+		default: // created
+			return a.CreatedAt.Before(b.CreatedAt)
+		}
+	})
+	items := make([]list.Item, len(filtered))
+	for i := range filtered {
+		items[i] = taskItem{task: &filtered[i]}
 	}
 	m.taskList.SetItems(items)
 }
@@ -307,7 +398,19 @@ func (m *Model) refreshList(tasks []db.Task) {
 func (m *Model) SetSize(w, h int) {
 	m.width = w
 	m.height = h
-	m.taskList.SetSize(w-10, listHeight)
+	listH := h - 6
+	if listH < 4 {
+		listH = 4
+	}
+	m.taskList.SetSize(w-10, listH)
+}
+
+// StatusHint returns context-specific key bindings for the status bar.
+func (m Model) StatusHint() string {
+	if m.showForm {
+		return "Enter next  F10 save  F11 cancel"
+	}
+	return "/ search  F filter  S sort  F5 new  F6 edit  F7 del"
 }
 
 // View renders the tasks UI.
@@ -318,6 +421,13 @@ func (m Model) View() string {
 		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("Error: "+m.err) + "\n")
 	}
 
+	filterLabel := "all"
+	if m.filterShow == 1 {
+		filterLabel = "incomplete"
+	} else if m.filterShow == 2 {
+		filterLabel = "complete"
+	}
+
 	if m.showForm {
 		title := " New Task "
 		if m.formEditID != 0 {
@@ -325,13 +435,13 @@ func (m Model) View() string {
 		}
 		b.WriteString(titleStyle.Render(title) + "\n\n")
 		b.WriteString("Title: " + m.formInput.View() + "\n")
-		b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("Enter or F2: save  Esc: cancel"))
 		return b.String()
 	}
 
-	b.WriteString(titleStyle.Render(" Tasks ") + "\n\n")
+	b.WriteString(titleStyle.Render(" Tasks ") + "  ")
+	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(
+		fmt.Sprintf("filter: %s | sort: %s", filterLabel, m.sortBy)) + "\n\n")
 	b.WriteString(m.taskList.View())
-	b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(" n new  Enter edit  space toggle  Ctrl+↑/↓ reorder  d delete  j/k select "))
 
 	return b.String()
 }

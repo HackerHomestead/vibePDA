@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.6.0] - 2026-02-15
+
+### Added
+
+- **Trash**: Soft-delete for all modules; deleted items move to Trash. F5 to open Trash, R to restore.
+- **Build demo**: `make build-demo` builds and seeds 100+ Star Wars records per module. `make clean` removes demo db (never touches user db).
+- **CLI options**: `-v`/`--version` and `-h`/`--help`. `VIBE_DB` env var overrides database path.
+- **Toaster notifications**: Transient "Saved", "Deleted", "Restored" messages on CRUD operations.
+- **Tasks**: Search (`/`), filter (`Shift+F` all/incomplete/complete), sort (`Shift+S` created/due/priority/title). Pretty date ("Today 6pm"). Completed tasks stay in place.
+- **Notes**: Double Enter (empty line) saves, same as calendar event notes.
+- **Calendar**: Date field (YYYY-MM-DD) and all-day checkbox in event form.
+- **Contacts**: Multi-column card layout when terminal is wide (2–4 columns).
+- **Binary name**: Output is `vibePDA` (Makefile, docs).
+
+### Changed
+
+- **Soft delete**: Delete marks records as deleted; restore from Trash. `deleted_at` column added to all tables.
+- **Tasks**: Order by id (no resort of completed). `updated_at` column for pretty date display.
+- **UI**: Dynamic height for lists; reduced spacing in grid/list views.
+
+---
+
 ## [0.5.0] - 2026-02-15
 
 ### Added

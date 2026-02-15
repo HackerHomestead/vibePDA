@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/you/vibe/internal/db"
+	"github.com/you/vibe/internal/toast"
 )
 
 const listHeight = 14
@@ -151,7 +152,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.noteList.SetSize(msg.Width-10, listHeight)
+		listH := msg.Height - 6
+		if listH < 4 {
+			listH = 4
+		}
+		m.noteList.SetSize(msg.Width-10, listH)
 		return m, nil
 	}
 
@@ -170,9 +175,13 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.formTextarea.Blur()
 		return m, nil
 	}
-	// Title is first line of textarea, content is rest - or we use a different approach
-	// Simpler: form has title (single line) and content (textarea). Need textinput for title.
-	// For now, use textarea only - first line = title, rest = content
+	// Double Enter (empty line) saves, same as calendar event notes
+	if s == "enter" {
+		val := m.formTextarea.Value()
+		if strings.HasSuffix(val, "\n") {
+			return m.formSave()
+		}
+	}
 	var cmd tea.Cmd
 	m.formTextarea, cmd = m.formTextarea.Update(msg)
 	return m, cmd
@@ -200,6 +209,8 @@ func (m Model) formSave() (Model, tea.Cmd) {
 				m.showForm = false
 				m.formTextarea.Blur()
 				m.err = ""
+				m.refreshList(nil)
+				return m, tea.Batch(m.loadNotes, func() tea.Msg { return toast.Msg{Text: "Note updated"} })
 			}
 		}
 	} else {
@@ -210,6 +221,8 @@ func (m Model) formSave() (Model, tea.Cmd) {
 			m.showForm = false
 			m.formTextarea.Blur()
 			m.err = ""
+			m.refreshList(nil)
+			return m, tea.Batch(m.loadNotes, func() tea.Msg { return toast.Msg{Text: "Note created"} })
 		}
 	}
 	m.refreshList(nil)
@@ -227,11 +240,11 @@ func (m Model) handleDelete() (Model, tea.Cmd) {
 	}
 	if err := m.repo.Delete(ni.note.ID); err != nil {
 		m.err = err.Error()
-	} else {
-		m.err = ""
+		return m, nil
 	}
+	m.err = ""
 	m.refreshList(nil)
-	return m, m.loadNotes
+	return m, tea.Batch(m.loadNotes, func() tea.Msg { return toast.Msg{Text: "Note deleted"} })
 }
 
 func (m *Model) refreshList(notes []db.Note) {
@@ -253,7 +266,19 @@ func (m *Model) refreshList(notes []db.Note) {
 func (m *Model) SetSize(w, h int) {
 	m.width = w
 	m.height = h
-	m.noteList.SetSize(w-10, listHeight)
+	listH := h - 6
+	if listH < 4 {
+		listH = 4
+	}
+	m.noteList.SetSize(w-10, listH)
+}
+
+// StatusHint returns context-specific key bindings for the status bar.
+func (m Model) StatusHint() string {
+	if m.showForm {
+		return "Enter² save  F10 save  F11 cancel"
+	}
+	return "F5 new  F6 edit  F7 del"
 }
 
 // View renders the notes UI.
@@ -272,13 +297,11 @@ func (m Model) View() string {
 		b.WriteString(titleStyle.Render(title) + "\n\n")
 		b.WriteString("First line = title, rest = content:\n")
 		b.WriteString(m.formTextarea.View())
-		b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("F2: save  Esc: cancel"))
 		return b.String()
 	}
 
 	b.WriteString(titleStyle.Render(" Notes ") + "\n\n")
 	b.WriteString(m.noteList.View())
-	b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(" n new  Enter edit  d delete  j/k select "))
 
 	return b.String()
 }

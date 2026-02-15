@@ -3,6 +3,7 @@ package app
 import (
 	"io"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,14 +13,17 @@ import (
 	"github.com/you/vibe/internal/db"
 	"github.com/you/vibe/internal/notes"
 	"github.com/you/vibe/internal/tasks"
+	"github.com/you/vibe/internal/toast"
+	"github.com/you/vibe/internal/trash"
 )
 
-// Module identifiers (Outlook-style folder list)
+// Module identifiers (sidebar list: Notes, Tasks, Contacts, Calendar, Trash)
 const (
 	ModuleNotes = iota
 	ModuleTasks
 	ModuleContacts
 	ModuleCalendar
+	ModuleTrash
 )
 
 const (
@@ -116,6 +120,9 @@ const (
 	FocusMain
 )
 
+// clearToastMsg is sent after a delay to hide the toaster.
+type clearToastMsg struct{}
+
 // Model is the Bubble Tea application model (Outlook-inspired layout).
 type Model struct {
 	sidebar   list.Model
@@ -123,9 +130,11 @@ type Model struct {
 	tasks     tasks.Model
 	notes     notes.Model
 	contacts  contacts.Model
+	trash     trash.Model
 	focusPane int // FocusSidebar or FocusMain
 	width     int
 	height    int
+	toast     string // transient message (e.g. "Event deleted")
 }
 
 // New creates a new application model.
@@ -135,11 +144,12 @@ func New(defaultView string, calendarRepo *db.CalendarRepo, tasksRepo *db.TasksR
 		moduleItem{title: "Tasks", id: ModuleTasks},
 		moduleItem{title: "Contacts", id: ModuleContacts},
 		moduleItem{title: "Calendar", id: ModuleCalendar},
+		moduleItem{title: "Trash", id: ModuleTrash},
 	}
 
 	delegate := moduleDelegate{}
 	l := list.New(items, delegate, sidebarWidth, listHeight)
-	l.Title = " Folders"
+	l.Title = " Modules"
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
 	l.SetShowHelp(false)
@@ -153,6 +163,7 @@ func New(defaultView string, calendarRepo *db.CalendarRepo, tasksRepo *db.TasksR
 	tsk := tasks.NewModel(tasksRepo, mainW, mainH)
 	nts := notes.NewModel(notesRepo, mainW, mainH)
 	con := contacts.NewModel(contactsRepo, mainW, mainH)
+	tr := trash.NewModel(calendarRepo, tasksRepo, notesRepo, contactsRepo, mainW, mainH)
 
 	return Model{
 		sidebar:   l,
@@ -160,6 +171,7 @@ func New(defaultView string, calendarRepo *db.CalendarRepo, tasksRepo *db.TasksR
 		tasks:     tsk,
 		notes:     nts,
 		contacts:  con,
+		trash:     tr,
 		focusPane: FocusSidebar,
 		width:     80,
 		height:    24,
@@ -176,6 +188,8 @@ func indexForView(name string) int {
 		return 2
 	case "calendar":
 		return 3
+	case "trash":
+		return 4
 	default:
 		return 1
 	}
@@ -192,12 +206,24 @@ func (m Model) Init() tea.Cmd {
 		return m.notes.Init()
 	case ModuleContacts:
 		return m.contacts.Init()
+	case ModuleTrash:
+		return m.trash.Init()
 	}
 	return nil
 }
 
 // Update handles messages.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Toaster: show message and schedule clear
+	switch v := msg.(type) {
+	case toast.Msg:
+		m.toast = v.Text
+		return m, tea.Tick(3*time.Second, func(time.Time) tea.Msg { return clearToastMsg{} })
+	case clearToastMsg:
+		m.toast = ""
+		return m, nil
+	}
+
 	routingMsg := msg
 	switch kmsg := msg.(type) {
 	case tea.KeyMsg:
@@ -227,7 +253,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f4":
 			m.sidebar.Select(ModuleCalendar)
 			return m, m.calendar.Init()
-		case "f5", "f6", "f7", "f10", "f11":
+		case "f5":
+			if m.focusPane == FocusSidebar {
+				m.sidebar.Select(ModuleTrash)
+				return m, m.trash.Init()
+			}
+			// Main pane: F5 = New (or R refresh when in Trash) — fall through to map
+			fallthrough
+		case "f6", "f7", "f10", "f11":
 			// Route F-keys to main pane when focused; translate to action keys
 			if m.focusPane == FocusMain {
 				mapped := map[string]tea.KeyMsg{
@@ -237,12 +270,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					"f10": {Type: tea.KeyF2},
 					"f11": {Type: tea.KeyEscape},
 				}
+				if m.sidebar.Index() == ModuleTrash {
+					mapped["f5"] = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}} // refresh trash
+				}
 				if fake, ok := mapped[s]; ok {
 					routingMsg = fake
 				} else {
 					return m, nil
 				}
-			} else {
+			} else if s != "f5" {
 				return m, nil
 			}
 		default:
@@ -259,6 +295,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.tasks.SetSize(mainW, mainH)
 		m.notes.SetSize(mainW, mainH)
 		m.contacts.SetSize(mainW, mainH)
+		m.trash.SetSize(mainW, mainH)
 		return m, nil
 	}
 
@@ -283,6 +320,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, loadCmd
 		}
 		m.contacts, loadCmd = m.contacts.Update(routingMsg)
+		if loadCmd != nil {
+			return m, loadCmd
+		}
+		m.trash, loadCmd = m.trash.Update(routingMsg)
 		if loadCmd != nil {
 			return m, loadCmd
 		}
@@ -314,6 +355,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.contacts, cmd = m.contacts.Update(routingMsg)
 			return m, cmd
 		}
+		if idx == ModuleTrash {
+			var cmd tea.Cmd
+			m.trash, cmd = m.trash.Update(routingMsg)
+			return m, cmd
+		}
 	}
 
 	// Sidebar focused or other module: route to sidebar
@@ -335,6 +381,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = tea.Batch(cmd, m.notes.Init())
 	case ModuleContacts:
 		cmd = tea.Batch(cmd, m.contacts.Init())
+	case ModuleTrash:
+		cmd = tea.Batch(cmd, m.trash.Init())
 	}
 
 	return m, cmd
@@ -369,12 +417,36 @@ func (m Model) View() string {
 	statusBar := statusBarStr(m)
 	statusBar = statusBarStyle.Width(m.width).Render(statusBar)
 
-	return title + "\n" + body + "\n" + statusBar
+	out := title + "\n" + body + "\n"
+	if m.toast != "" {
+		toasterStyle := lipgloss.NewStyle().
+			Background(lipgloss.Color("62")).
+			Foreground(lipgloss.Color("15")).
+			Padding(0, 2)
+		toaster := toasterStyle.Render(" " + m.toast + " ")
+		out += lipgloss.Place(m.width, 1, lipgloss.Center, lipgloss.Left, toaster) + "\n"
+	}
+	return out + statusBar
 }
 
-// statusBarStr returns the DOS-style status bar content.
+// statusBarStr returns the DOS-style status bar content (dynamic by active module).
 func statusBarStr(m Model) string {
-	return " F1 Notes  F2 Tasks  F3 Contacts  F4 Calendar  |  F5 New  F6 Edit  F7 Del  |  F8 Main  F9 Side  F10 Save  F11 Esc  |  F12 Quit "
+	var hint string
+	switch m.sidebar.Index() {
+	case ModuleNotes:
+		hint = m.notes.StatusHint()
+	case ModuleTasks:
+		hint = m.tasks.StatusHint()
+	case ModuleContacts:
+		hint = m.contacts.StatusHint()
+	case ModuleCalendar:
+		hint = m.calendar.StatusHint()
+	case ModuleTrash:
+		hint = m.trash.StatusHint()
+	default:
+		hint = m.tasks.StatusHint()
+	}
+	return " F1 Notes  F2 Tasks  F3 Contacts  F4 Calendar  F5 Trash  |  " + hint + "  |  F8 Main  F9 Side  |  F12 Quit "
 }
 
 func (m Model) mainContent() string {
@@ -387,6 +459,8 @@ func (m Model) mainContent() string {
 		return m.contacts.View()
 	case ModuleCalendar:
 		return m.calendar.View()
+	case ModuleTrash:
+		return m.trash.View()
 	default:
 		return m.tasks.View()
 	}

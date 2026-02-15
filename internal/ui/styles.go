@@ -13,7 +13,7 @@ var (
 			Background(lipgloss.Color("62")).
 			Padding(0, 1)
 
-	// Sidebar (left nav, Outlook folder list style)
+	// Sidebar (left nav, module list: Notes, Tasks, Contacts, Calendar)
 	SidebarStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("240")).

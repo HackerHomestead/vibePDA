@@ -1,5 +1,7 @@
 # Binary (root only, not cmd/vibe/)
 /vibe
+/vibePDA
+vibe-demo.db
 
 # Go
 *.exe

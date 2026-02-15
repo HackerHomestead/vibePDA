@@ -13,6 +13,8 @@ type Task struct {
 	DueDate   *time.Time
 	Priority  int
 	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt *time.Time
 }
 
 // TasksRepo provides CRUD for tasks.
@@ -47,10 +49,10 @@ func (r *TasksRepo) Create(t *Task) error {
 	return nil
 }
 
-// List returns all tasks ordered by done, priority desc, created_at.
+// List returns all non-deleted tasks ordered by id (insertion order; completed tasks stay in place).
 func (r *TasksRepo) List() ([]Task, error) {
 	rows, err := r.db.Query(
-		`SELECT id, title, done, due_date, priority, created_at FROM tasks ORDER BY done, priority DESC, created_at`,
+		`SELECT id, title, done, due_date, priority, created_at, updated_at, deleted_at FROM tasks WHERE deleted_at IS NULL ORDER BY id`,
 	)
 	if err != nil {
 		return nil, err
@@ -59,13 +61,25 @@ func (r *TasksRepo) List() ([]Task, error) {
 	return scanTasks(rows)
 }
 
-// Get returns a task by ID.
+// ListDeleted returns tasks that are in trash, ordered by deleted_at desc.
+func (r *TasksRepo) ListDeleted() ([]Task, error) {
+	rows, err := r.db.Query(
+		`SELECT id, title, done, due_date, priority, created_at, updated_at, deleted_at FROM tasks WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanTasks(rows)
+}
+
+// Get returns a task by ID. Returns nil if the task is deleted (in trash).
 func (r *TasksRepo) Get(id int64) (*Task, error) {
 	var t Task
-	var due sql.NullString
+	var due, ignored sql.NullString
 	err := r.db.QueryRow(
-		`SELECT id, title, done, due_date, priority, created_at FROM tasks WHERE id = ?`, id,
-	).Scan(&t.ID, &t.Title, &t.Done, &due, &t.Priority, &t.CreatedAt)
+		`SELECT id, title, done, due_date, priority, created_at, updated_at, deleted_at FROM tasks WHERE id = ? AND deleted_at IS NULL`, id,
+	).Scan(&t.ID, &t.Title, &t.Done, &due, &t.Priority, &t.CreatedAt, &t.UpdatedAt, &ignored)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -82,26 +96,33 @@ func (r *TasksRepo) Get(id int64) (*Task, error) {
 
 // Update updates a task.
 func (r *TasksRepo) Update(t *Task) error {
+	t.UpdatedAt = time.Now()
 	var due interface{}
 	if t.DueDate != nil {
 		due = t.DueDate.Format("2006-01-02")
 	}
 	_, err := r.db.Exec(
-		`UPDATE tasks SET title=?, done=?, due_date=?, priority=? WHERE id=?`,
-		t.Title, boolToInt(t.Done), due, t.Priority, t.ID,
+		`UPDATE tasks SET title=?, done=?, due_date=?, priority=?, updated_at=? WHERE id=?`,
+		t.Title, boolToInt(t.Done), due, t.Priority, t.UpdatedAt, t.ID,
 	)
 	return err
 }
 
 // ToggleDone flips the done state.
 func (r *TasksRepo) ToggleDone(id int64) error {
-	_, err := r.db.Exec(`UPDATE tasks SET done = 1 - done WHERE id = ?`, id)
+	_, err := r.db.Exec(`UPDATE tasks SET done = 1 - done, updated_at = datetime('now') WHERE id = ?`, id)
 	return err
 }
 
-// Delete removes a task.
+// Delete soft-deletes a task (moves to trash).
 func (r *TasksRepo) Delete(id int64) error {
-	_, err := r.db.Exec(`DELETE FROM tasks WHERE id = ?`, id)
+	_, err := r.db.Exec(`UPDATE tasks SET deleted_at = datetime('now') WHERE id = ?`, id)
+	return err
+}
+
+// Restore restores a soft-deleted task.
+func (r *TasksRepo) Restore(id int64) error {
+	_, err := r.db.Exec(`UPDATE tasks SET deleted_at = NULL WHERE id = ?`, id)
 	return err
 }
 
@@ -155,13 +176,18 @@ func scanTasks(rows *sql.Rows) ([]Task, error) {
 	var tasks []Task
 	for rows.Next() {
 		var t Task
-		var due sql.NullString
-		if err := rows.Scan(&t.ID, &t.Title, &t.Done, &due, &t.Priority, &t.CreatedAt); err != nil {
+		var due, deletedAt sql.NullString
+		if err := rows.Scan(&t.ID, &t.Title, &t.Done, &due, &t.Priority, &t.CreatedAt, &t.UpdatedAt, &deletedAt); err != nil {
 			return nil, err
 		}
 		if due.Valid && due.String != "" {
 			if parsed, err := time.Parse("2006-01-02", due.String); err == nil {
 				t.DueDate = &parsed
+			}
+		}
+		if deletedAt.Valid && deletedAt.String != "" {
+			if parsed, err := time.Parse("2006-01-02 15:04:05", deletedAt.String); err == nil {
+				t.DeletedAt = &parsed
 			}
 		}
 		tasks = append(tasks, t)

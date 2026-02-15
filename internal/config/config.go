@@ -37,8 +37,13 @@ func ConfigPath() string {
 }
 
 // Load reads config from JSON file, falling back to defaults.
+// VIBE_DB env var overrides database_path (useful for demo: VIBE_DB=./vibe-demo.db ./vibePDA).
 func Load() (Config, error) {
 	cfg := Default()
+	if p := os.Getenv("VIBE_DB"); p != "" {
+		cfg.DatabasePath = expandPath(p)
+		return cfg, nil
+	}
 	path := ConfigPath()
 	data, err := os.ReadFile(path)
 	if err != nil {

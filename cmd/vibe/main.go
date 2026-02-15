@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -11,7 +12,37 @@ import (
 	"github.com/you/vibe/internal/db"
 )
 
+const helpText = `vibePDA - A terminal personal data assistant
+
+Usage:
+  vibePDA [options]
+
+Options:
+  -v, --version    Show build/version and exit
+  -h, --help       Show this help and exit
+
+Environment:
+  VIBE_DB          Override database path (e.g. ./vibe-demo.db for demo)
+
+Modules: Notes, Tasks, Contacts, Calendar, Trash
+Key bindings shown in status bar. See README.md for full documentation.
+`
+
 func main() {
+	for _, arg := range os.Args[1:] {
+		switch arg {
+		case "-v", "--version":
+			ver := app.BuildNumber
+			if ver == "" {
+				ver = "dev"
+			}
+			fmt.Println("vibePDA", ver)
+			os.Exit(0)
+		case "-h", "-help", "--help":
+			fmt.Print(helpText)
+			os.Exit(0)
+		}
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		log.Printf("config load warning: %v (using defaults)", err)

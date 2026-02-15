@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS notes (
     title TEXT NOT NULL,
     content TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
@@ -21,7 +22,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     done INTEGER DEFAULT 0,
     due_date DATE,
     priority INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME
 );
 
 CREATE TABLE IF NOT EXISTS contacts (
@@ -30,7 +33,8 @@ CREATE TABLE IF NOT EXISTS contacts (
     email TEXT,
     phone TEXT,
     notes TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME
 );
 
 CREATE TABLE IF NOT EXISTS calendar_events (
@@ -42,7 +46,8 @@ CREATE TABLE IF NOT EXISTS calendar_events (
     all_day INTEGER DEFAULT 0,
     location TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME
 );
 
 CREATE TABLE IF NOT EXISTS event_attendees (
@@ -64,5 +69,10 @@ func Open(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	// Add deleted_at to existing tables (no-op if column already exists)
+	for _, tbl := range []string{"notes", "tasks", "contacts", "calendar_events"} {
+		_, _ = db.Exec("ALTER TABLE " + tbl + " ADD COLUMN deleted_at DATETIME")
+	}
+	_, _ = db.Exec("ALTER TABLE tasks ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP")
 	return db, nil
 }

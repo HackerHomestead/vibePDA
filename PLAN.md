@@ -55,6 +55,8 @@ No ncurses or CGO required — keeps builds simple and cross-compilation friendl
 
 Future: reminders, journal entries, recurring events.
 
+**Sidebar / "Modules"**: The left sidebar shows four fixed modules (Notes, Tasks, Contacts, Calendar). The label "Folders" was removed — these are modules, not file/folder hierarchies. Future MVP: optional user-created folders or categories (e.g. Work/Personal) for organizing notes/tasks within a module.
+
 ---
 
 ## Project Structure

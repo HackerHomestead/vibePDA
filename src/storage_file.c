@@ -600,6 +600,150 @@ int storage_events_delete(int id) {
     return events_rewrite(id, 1, NULL, NULL, NULL, NULL, 0);
 }
 
+/* Facts: id\tkey\tvalue\tcreated_at\tdeleted_at (empty = not deleted) */
+int storage_facts_count(void) {
+    char path[DATA_DIR_MAX + 64];
+    data_path(path, sizeof(path), "facts.txt");
+    FILE *f = fopen(path, "r");
+    int n = 0;
+    if (f) {
+        char line[LINE_MAX];
+        while (fgets(line, sizeof(line), f)) {
+            char *p = line;
+            int tabs = 0;
+            while (*p) { if (*p == '\t') tabs++; p++; }
+            if (tabs < 4) continue;
+            p--;
+            while (p > line && (*p == '\n' || *p == '\r')) p--;
+            if (p > line && *p == '\t') n++;
+        }
+        fclose(f);
+    }
+    return n;
+}
+
+int storage_facts_add(const char *key, const char *value) {
+    ensure_data_dir();
+    char path[DATA_DIR_MAX + 64];
+    data_path(path, sizeof(path), "facts.txt");
+    int id = next_id("facts.txt");
+    char k[VIBE_TITLE_MAX];
+    sanitize(k, key ? key : "", VIBE_TITLE_MAX);
+    char v[VIBE_CONTENT_MAX];
+    sanitize(v, value ? value : "", VIBE_CONTENT_MAX);
+    char ts[VIBE_DATETIME_MAX];
+    timestamp(ts, sizeof(ts));
+    FILE *f = fopen(path, "a");
+    if (!f) return 0;
+    fprintf(f, "%d\t%s\t%s\t%s\t\n", id, k, v, ts);
+    fclose(f);
+    return id;
+}
+
+void storage_facts_list(void (*cb)(const VibeFact *, void *), void *ctx) {
+    char path[DATA_DIR_MAX + 64];
+    data_path(path, sizeof(path), "facts.txt");
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    char line[LINE_MAX];
+    while (fgets(line, sizeof(line), f)) {
+        VibeFact fact = {0};
+        char *p = line;
+        if (sscanf(p, "%d", &fact.id) != 1) continue;
+        p = strchr(p, '\t');
+        if (!p) continue;
+        p++;
+        char *key_end = strchr(p, '\t');
+        if (!key_end) continue;
+        *key_end = '\0';
+        snprintf(fact.key, sizeof(fact.key), "%s", p);
+        p = key_end + 1;
+        char *val_end = strchr(p, '\t');
+        if (!val_end) continue;
+        *val_end = '\0';
+        snprintf(fact.value, sizeof(fact.value), "%s", p);
+        p = val_end + 1;
+        char *created_end = strchr(p, '\t');
+        if (!created_end) continue;
+        *created_end = '\0';
+        snprintf(fact.created_at, sizeof(fact.created_at), "%s", p);
+        p = created_end + 1;
+        char *deleted_end = strchr(p, '\n');
+        if (deleted_end) *deleted_end = '\0';
+        if (p[0] == '\0' || p[0] == '\t') {
+            fact.deleted_at[0] = '\0';
+            if (cb) cb(&fact, ctx);
+        } else {
+            snprintf(fact.deleted_at, sizeof(fact.deleted_at), "%s", p);
+        }
+    }
+    fclose(f);
+}
+
+int storage_fact_get(int id, VibeFact *out) {
+    int found = 0;
+    void find_one(const VibeFact *f, void *ctx) {
+        (void)ctx;
+        if (f->id == id && out) { *out = *f; found = 1; }
+    }
+    storage_facts_list(find_one, NULL);
+    return found;
+}
+
+static int facts_rewrite(int skip_id, int set_deleted,
+    const char *new_key, const char *new_value) {
+    char path[DATA_DIR_MAX + 64];
+    data_path(path, sizeof(path), "facts.txt");
+    char tmp[DATA_DIR_MAX + 72];
+    snprintf(tmp, sizeof(tmp), "%s.$$$", path);
+    FILE *in = fopen(path, "r");
+    if (!in) return 0;
+    FILE *out = fopen(tmp, "w");
+    if (!out) { fclose(in); return 0; }
+    char line[LINE_MAX];
+    int ok = 0;
+    while (fgets(line, sizeof(line), in)) {
+        int id = atoi(line);
+        char *rest = strchr(line, '\t');
+        if (!rest) { fputs(line, out); continue; }
+        if (id == skip_id) {
+            if (set_deleted) {
+                char ts[VIBE_DATETIME_MAX];
+                timestamp(ts, sizeof(ts));
+                char *end = strchr(line, '\n');
+                if (end) *end = '\0';
+                end = line + strlen(line);
+                while (end > line && (end[-1] == '\t' || end[-1] == ' ')) end--;
+                *end = '\0';
+                fprintf(out, "%s\t%s\n", line, ts);
+            } else if (new_key != NULL) {
+                char ts[VIBE_DATETIME_MAX];
+                timestamp(ts, sizeof(ts));
+                fprintf(out, "%d\t%s\t%s\t%s\t\n", id, new_key, new_value ? new_value : "", ts);
+            }
+            ok = 1;
+            continue;
+        }
+        fputs(line, out);
+    }
+    fclose(in);
+    fclose(out);
+    if (ok) { remove(path); rename(tmp, path); }
+    else remove(tmp);
+    return ok;
+}
+
+int storage_facts_update(int id, const char *key, const char *value) {
+    char k[VIBE_TITLE_MAX], v[VIBE_CONTENT_MAX];
+    sanitize(k, key ? key : "", VIBE_TITLE_MAX);
+    sanitize(v, value ? value : "", VIBE_CONTENT_MAX);
+    return facts_rewrite(id, 0, k, v);
+}
+
+int storage_facts_delete(int id) {
+    return facts_rewrite(id, 1, NULL, NULL);
+}
+
 int storage_trash_count(void) { return 0; }
 void storage_trash_list(void (*cb)(int entity_type, int id, const char *title, void *), void *ctx) { (void)cb;(void)ctx; }
 int storage_restore(int entity_type, int id) { (void)entity_type;(void)id; return 0; }

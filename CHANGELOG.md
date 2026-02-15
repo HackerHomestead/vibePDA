@@ -14,13 +14,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **1980s-style TUI**: Curses (ncurses on Linux, PDCurses on DOS). Menu bar (F1–F4, F10), status line, F-keys for actions.
 - **Note cards**: Notes display as Title + Content; Up/Down navigate between them.
-- **Multi-line content editor**: Note body uses bordered text area; Enter=newline, F2=Save, Esc=Cancel.
+- **Multi-line content editor**: Note body uses bordered text area with cursor, line numbers (F5), and scrolling (Page Up/Down). Enter=newline, Enter+Enter=save, Esc=cancel. Arrow keys move cursor responsively.
+- **FACTS module**: New module for key-value pairs (e.g. "Andrew SSN = 455-56-2022"). Full CRUD support with `facts add <key> <value>`, `list`, `edit`, `delete` commands.
+- **TUI test framework**: `make test_tui` builds automated UI tests (`tests/test_tui.c`) that simulate key presses and verify UI behavior.
 - **Unit tests**: `make test` runs app (UI state, key handling, content editor) and storage tests. CLI integration: `--foo` prints "unknown argument", exits 1.
 - **Make targets**: `make clean all` and `make rebuild` remove all binaries and object files before rebuilding. Linux targets use ncurses by default.
+- **Display size flags**: `--display small` (80x25), `--display auto` (dynamic terminal size), `--display custom COLxROW` (e.g. `--display custom 120x30`).
+- **REPL improvements**: Prompt changed from `"vibe> "` to `"> "`. Added `list` command to show all records (Notes, Tasks, Contacts, Calendar, Facts) in formatted tables.
+- **Status bar**: Shows current UI context (e.g. `:Notes=>View`, `:Notes=>ContentEditing`, `:Facts=>Adding`).
 
 ### Changed
 
-- **Documentation**: README, PLAN, docs/TESTING updated for alpha status, curses TUI, note cards, content editor, make clean/rebuild.
+- **Content editor save**: Changed from F2 to Enter+Enter (two blank lines) for saving notes. More intuitive for multiline editing.
+- **Cursor responsiveness**: Cursor now immediately moves to next line when pressing Up/Down arrow keys, without waiting for typing.
+- **Pagination**: Improved scrolling for large notes (100+ lines). Page Up/Down scrolls one page at a time. Cursor automatically scrolls into view when moving.
+- **Documentation**: README, PLAN, docs/TESTING updated for alpha status, curses TUI, note cards, content editor, FACTS module, make clean/rebuild.
 - **Unknown arguments**: Print "unknown argument" to stderr, show help, exit 1.
 
 ---

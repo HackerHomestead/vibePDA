@@ -16,11 +16,12 @@
 | **Tasks** | To-do list                  |
 | **Contacts** | Contact list            |
 | **Calendar** | Events and appointments |
+| **Facts** | Key-value pairs (e.g. SSN, passwords) |
 | **Trash** | Soft-deleted items, restore |
 
 - **1980s-style TUI**: Menu bar (F1–F4, F10), status line. Uses curses (ncurses/PDCurses).
 - **Note cards**: Notes display as cards (Title + Content); Up/Down navigate between them.
-- **Multi-line content editor**: Note body uses a bordered text area; Enter=newline, F2=Save, Esc=Cancel.
+- **Multi-line content editor**: Note body uses a bordered text area with cursor, line numbers (F5), and scrolling (Page Up/Down). Enter=newline, Enter+Enter=save, Esc=cancel.
 - **Hotkeys**: F2/N new, F3/E edit, F4/D delete, F1/? help, F10/q quit; Up/Down navigate; Tab switch pane.
 
 ---

@@ -49,10 +49,15 @@ endif
 
 OBJ = $(SRC:.c=.o)
 
-.PHONY: all clean install uninstall dist distcheck test webasm rebuild
+.PHONY: all clean install uninstall dist distcheck test webasm rebuild demo
 
 # Default goal (make / make all): build program for current TARGET
-all: $(if $(filter webasm,$(TARGET)),vibePDA.js,vibePDA)
+# Always rebuilds by removing target first if it exists
+all:
+	@if [ -f "$(if $(filter webasm,$(TARGET)),vibePDA.js,vibePDA)" ]; then \
+		rm -f $(if $(filter webasm,$(TARGET)),vibePDA.js,vibePDA); \
+	fi
+	$(MAKE) $(if $(filter webasm,$(TARGET)),vibePDA.js,vibePDA)
 
 # Clean rebuild: remove all build artifacts, then build
 rebuild: clean all
@@ -74,13 +79,23 @@ config.h: config.h.in VERSION
 
 run_tests: config.h
 	$(CC) $(CPPFLAGS) -Itests $(CFLAGS) -o run_tests tests/run_tests.c tests/test_app.c tests/test_storage.c tests/fixture_parks.c src/app.c src/tui.c src/storage_file.c -lncurses
+
+test_tui: config.h
+	$(CC) $(CPPFLAGS) -Itests -Isrc $(CFLAGS) -o test_tui tests/test_tui.c src/app.c src/tui.c src/vibe_config.c src/storage_file.c -lncurses
+
+demo/demo: config.h
+	$(CC) $(CPPFLAGS) -Itests -Isrc $(CFLAGS) -o demo/demo demo/demo.c tests/fixture_parks.c src/vibe_config.c src/storage_file.c
+
+demo: demo/demo
+	@./demo/demo
+
 test: run_tests vibePDA
 	./run_tests
 	@./vibePDA --foo 2>&1 | grep -q "unknown argument" || (echo "FAIL: unknown argument not reported"; exit 1)
 	@./vibePDA --foo >/dev/null 2>/dev/null; test $$? -eq 1 || (echo "FAIL: unknown argument should exit 1"; exit 1)
 
 clean:
-	rm -f vibePDA vibePDA.js vibePDA.wasm run_tests config.h
+	rm -f vibePDA vibePDA.js vibePDA.wasm run_tests test_tui demo/demo config.h
 	rm -f $(OBJ) src/*.o
 
 install: all

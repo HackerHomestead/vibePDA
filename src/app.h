@@ -7,8 +7,9 @@
 #define MODULE_TASKS    1
 #define MODULE_CONTACTS 2
 #define MODULE_CALENDAR 3
-#define MODULE_TRASH    4
-#define MODULE_COUNT    5
+#define MODULE_FACTS    4
+#define MODULE_TRASH    5
+#define MODULE_COUNT    6
 
 #define APP_MESSAGE_LEN 80
 #define COMMAND_BUF_LEN 256
@@ -37,6 +38,9 @@ typedef struct {
     int content_edit_mode;
     char content_edit_buf[CONTENT_EDIT_BUF_MAX];
     int content_edit_len;
+    int content_edit_cursor_pos;  /* cursor position in buffer */
+    int content_edit_show_line_numbers;  /* 1=show line numbers */
+    int content_edit_scroll_offset;  /* line number to start displaying from */
 } AppState;
 
 void app_init(AppState *a, int rows, int cols);

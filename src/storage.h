@@ -13,6 +13,7 @@ int storage_notes_count(void);
 int storage_tasks_count(void);
 int storage_contacts_count(void);
 int storage_events_count(void);
+int storage_facts_count(void);
 int storage_trash_count(void);
 
 /* Notes CRUD */
@@ -43,7 +44,14 @@ int storage_event_get(int id, VibeCalendarEvent *out);
 int storage_events_update(int id, const char *title, const char *desc, const char *start_at, const char *end_at, int all_day);
 int storage_events_delete(int id);
 
-/* Trash: list deleted items; restore by entity type (0=note,1=task,2=contact,3=event) and id */
+/* Facts CRUD */
+int storage_facts_add(const char *key, const char *value);
+void storage_facts_list(void (*cb)(const VibeFact *, void *), void *ctx);
+int storage_fact_get(int id, VibeFact *out);
+int storage_facts_update(int id, const char *key, const char *value);
+int storage_facts_delete(int id);
+
+/* Trash: list deleted items; restore by entity type (0=note,1=task,2=contact,3=event,4=fact) and id */
 void storage_trash_list(void (*cb)(int entity_type, int id, const char *title, void *), void *ctx);
 int storage_restore(int entity_type, int id);
 

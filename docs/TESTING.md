@@ -59,9 +59,9 @@ VIBE_TEST_SEED=42 VIBE_TEST_RECORDS=100 make test
 - **F-keys**: F1 Help, F2 New, F3 Edit, F4 Delete, F10 Quit. Shortcuts: n/t/c/a/x switch module; q quit; ? help.
 - **Navigation**: Up/Down in sidebar switch modules; Up/Down in main pane move selection; Tab/Shift+Tab switch focus between sidebar and main.
 - **Note cards**: Notes display as cards (Title + Content). Select a note to view its content in the main pane.
-- **Content editor**: When adding/editing a note body, a bordered multi-line text area appears. Enter inserts newline; F2 saves; Esc cancels and exits content editor.
+- **Content editor**: When adding/editing a note body, a bordered multi-line text area appears with cursor, line numbers (F5), and scrolling (Page Up/Down). Enter inserts newline; Enter+Enter (two blank lines) saves; Esc cancels and exits content editor. Arrow keys move cursor; cursor automatically scrolls into view.
 
-Manual test: run `./vibePDA`, press F2 (New), type a title, Enter, type content, F2 to save. Press Esc to cancel if needed.
+Manual test: run `./vibePDA`, press F2 (New), type a title, Enter, type content, press Enter twice to save. Press Esc to cancel if needed.
 
 ---
 

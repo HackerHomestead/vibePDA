@@ -17,24 +17,42 @@
 static void print_help(const char *prog) {
     printf("Usage: %s [OPTION]\n", prog);
     printf("       %s <entity> <action> [args...]   one-shot CLI (Linux/DOS)\n", prog);
-    printf("Terminal personal data assistant (Notes, Tasks, Contacts, Calendar).\n\n");
+    printf("Terminal personal data assistant (Notes, Tasks, Contacts, Calendar, Facts).\n\n");
     printf("Options:\n");
     printf("  -h, --help     display this help and exit\n");
-    printf("  -v, --version  output version information and exit\n\n");
+    printf("  -v, --version  output version information and exit\n");
+    printf("  --display MODE set display size: small (80x25), auto (terminal),\n");
+    printf("                 custom COLxROW (e.g. --display custom 80x24)\n\n");
     printf("One-shot CLI (no TUI):\n");
-    printf("  notes    add <title> [content]  | list | show <id> | edit <id> <title> [content] | delete <id>\n");
-    printf("  tasks    add <title> [due_date] [priority]  | list | show <id> | edit <id> ... | delete <id>\n");
-    printf("  contacts add <name> [email] [phone]  | list | show <id> | edit <id> ... | delete <id>\n");
-    printf("  calendar add <title> [start] [end] [all_day]  | list | show <id> | edit <id> ... | delete <id>\n");
-    printf("  trash    list | restore <type> <id>   (type: note|task|contact|event)\n\n");
-    printf("  --mode tui             Terminal UI (default): F1 Help, F2 New, F3 Edit, F4 Delete\n");
+    printf("  notes    add <title> [content] | list | show <id> | edit ... | delete <id>\n");
+    printf("  tasks    add <title> [due_date] [priority] | list | show <id>\n");
+    printf("           edit <id> ... | delete <id>\n");
+    printf("  contacts add <name> [email] [phone] | list | show <id> | edit ... | delete\n");
+    printf("  calendar add <title> [start] [end] [all_day] | list | show <id>\n");
+    printf("           edit <id> ... | delete <id>\n");
+    printf("  facts    add <key> <value> | list | show <id> | edit <id> <key> <value>\n");
+    printf("           delete <id>\n");
+    printf("  trash    list | restore <type> <id>   (type: note|task|contact|event|fact)\n\n");
+    printf("  --mode tui             Terminal UI (default):\n");
+    printf("                         F1 Help, F2 New, F3 Edit, F4 Delete\n");
     printf("  -cmd, --mode command   Interactive command mode (REPL, like GW-BASIC)\n\n");
     printf("TUI: Up/Down navigate, Tab switch pane, Enter edit, N new, D delete, ? help.\n");
+    printf("     Content editor: Enter=newline, Enter+Enter=save, Esc=cancel, F5=line#.\n");
+    printf("     Page Up/Down scrolls long notes. Arrow keys move cursor.\n");
 }
 
 static void print_version(void) {
     printf("%s %s\n", PACKAGE, VERSION);
 }
+
+/* Display mode: 0=auto (terminal size), 1=small (80x25), 2=custom (user COLxROW) */
+#define DISPLAY_AUTO   0
+#define DISPLAY_SMALL  1
+#define DISPLAY_CUSTOM 2
+
+static int display_mode = DISPLAY_AUTO;
+static int display_cols = 80;
+static int display_rows = 25;
 
 /* Returns: 0=continue, 1=handled(help/version), 2=unknown argument error */
 static int parse_args(int argc, char **argv) {
@@ -60,6 +78,44 @@ static int parse_args(int argc, char **argv) {
             print_help(argv[0]);
             return 2;
         }
+        if (strcmp(arg, "--display") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "unknown argument: %s (missing value)\n", arg);
+                print_help(argv[0]);
+                return 2;
+            }
+            const char *val = argv[++i];
+            if (strcmp(val, "small") == 0) {
+                display_mode = DISPLAY_SMALL;
+                display_cols = 80;
+                display_rows = 25;
+            } else if (strcmp(val, "auto") == 0) {
+                display_mode = DISPLAY_AUTO;
+            } else if (strcmp(val, "custom") == 0) {
+                if (i + 1 >= argc) {
+                    fprintf(stderr, "unknown argument: %s (missing COLxROW)\n", arg);
+                    print_help(argv[0]);
+                    return 2;
+                }
+                val = argv[++i];
+                int c = 0, r = 0;
+                if (sscanf(val, "%dx%d", &c, &r) == 2 &&
+                    c >= 24 && c <= 256 && r >= 10 && r <= 100) {
+                    display_mode = DISPLAY_CUSTOM;
+                    display_cols = c;
+                    display_rows = r;
+                } else {
+                    fprintf(stderr, "unknown argument: %s (invalid COLxROW)\n", val);
+                    print_help(argv[0]);
+                    return 2;
+                }
+            } else {
+                fprintf(stderr, "unknown argument: %s (expected small|auto|custom)\n", val);
+                print_help(argv[0]);
+                return 2;
+            }
+            continue;
+        }
         if (arg[0] == '-') {
             fprintf(stderr, "unknown argument: %s\n", arg);
             print_help(argv[0]);
@@ -67,6 +123,20 @@ static int parse_args(int argc, char **argv) {
         }
     }
     return 0;
+}
+
+/* Get display dimensions for app. Call after tui_init() for auto mode. */
+static void get_display_dimensions(int *rows, int *cols) {
+    if (display_mode == DISPLAY_AUTO) {
+        *rows = tui_rows();
+        *cols = tui_cols();
+        /* Clamp to reasonable minimum */
+        if (*rows < 10) *rows = 10;
+        if (*cols < 24) *cols = 24;
+    } else {
+        *rows = display_rows;
+        *cols = display_cols;
+    }
 }
 
 #if defined(PLATFORM_LINUX) || defined(PLATFORM_DOS)
@@ -92,7 +162,7 @@ static int want_interactive_cmd(int argc, char **argv) {
 #define HISTORY_MAX   128
 
 #if defined(PLATFORM_LINUX)
-/* Read a line with Up/Down history. prompt is e.g. "vibe> ".
+/* Read a line with Up/Down history. prompt is e.g. "> ".
  * history[*history_cur] is shown when navigating; caller sets *history_cur = *history_len before call.
  * Returns 1 if a line was read, 0 on EOF. */
 static int read_line_with_history(char *buf, int size, const char *prompt,
@@ -205,7 +275,7 @@ static void run_interactive_cmd_mode(void) {
 #endif
 
     printf("%s %s — interactive command mode (↑/↓ history, 'help', 'clear', 'quit')\n", PACKAGE, VERSION);
-    printf("vibe> ");
+    printf("> ");
     fflush(stdout);
 
     for (;;) {
@@ -217,7 +287,7 @@ static void run_interactive_cmd_mode(void) {
 #if defined(PLATFORM_LINUX)
         if (use_history) {
             history_cur = history_len;
-            if (!read_line_with_history(line, sizeof(line), "vibe> ", history, &history_len, &history_cur)) {
+            if (!read_line_with_history(line, sizeof(line), "> ", history, &history_len, &history_cur)) {
                 if (feof(stdin)) break;
                 continue;
             }
@@ -253,7 +323,7 @@ static void run_interactive_cmd_mode(void) {
 
         n = tokenize_line(line, tokens, CMD_TOKENS_MAX);
         if (n == 0) {
-            printf("vibe> ");
+            printf("> ");
             fflush(stdout);
             continue;
         }
@@ -267,10 +337,11 @@ static void run_interactive_cmd_mode(void) {
             printf("contacts [add|list|delete] ...\n");
             printf("calendar [add|list|delete] ...\n");
             printf("trash [list|restore] ...\n");
+            printf("list — show all records in table format\n");
             printf("clear — clear screen\n");
             printf("↑/↓ — command history\n");
             printf("quit, exit, q — exit\n");
-            printf("vibe> ");
+            printf("> ");
             fflush(stdout);
             continue;
         }
@@ -278,7 +349,52 @@ static void run_interactive_cmd_mode(void) {
         if (strcmp(tokens[0], "clear") == 0 || strcmp(tokens[0], "cls") == 0) {
             printf("\033[2J\033[H");
             fflush(stdout);
-            printf("vibe> ");
+            printf("> ");
+            fflush(stdout);
+            continue;
+        }
+
+        if (strcmp(tokens[0], "list") == 0) {
+            printf("NOTES\n");
+            printf("ID\tTitle\tContent\n");
+            void print_note(const VibeNote *n, void *ctx) {
+                (void)ctx;
+                char content_preview[32];
+                int len = (int)strlen(n->content);
+                if (len > 30) {
+                    memcpy(content_preview, n->content, 27);
+                    content_preview[27] = '.';
+                    content_preview[28] = '.';
+                    content_preview[29] = '.';
+                    content_preview[30] = '\0';
+                } else {
+                    strcpy(content_preview, n->content);
+                }
+                printf("%d\t%s\t%s\n", n->id, n->title, content_preview);
+            }
+            storage_notes_list(print_note, NULL);
+            printf("\nTASKS\n");
+            printf("ID\tTitle\tDue\tDone\n");
+            void print_task(const VibeTask *t, void *ctx) {
+                (void)ctx;
+                printf("%d\t%s\t%s\t%d\n", t->id, t->title, t->due_date, t->done);
+            }
+            storage_tasks_list(print_task, NULL);
+            printf("\nCONTACTS\n");
+            printf("ID\tName\tEmail\tPhone\n");
+            void print_contact(const VibeContact *c, void *ctx) {
+                (void)ctx;
+                printf("%d\t%s\t%s\t%s\n", c->id, c->name, c->email, c->phone);
+            }
+            storage_contacts_list(print_contact, NULL);
+            printf("\nCALENDAR\n");
+            printf("ID\tTitle\tStart\tEnd\n");
+            void print_event(const VibeCalendarEvent *e, void *ctx) {
+                (void)ctx;
+                printf("%d\t%s\t%s\t%s\n", e->id, e->title, e->start_at, e->end_at);
+            }
+            storage_events_list(print_event, NULL);
+            printf("> ");
             fflush(stdout);
             continue;
         }
@@ -292,7 +408,7 @@ static void run_interactive_cmd_mode(void) {
             /* run_cli already printed to stderr */
         }
 
-        printf("vibe> ");
+        printf("> ");
         fflush(stdout);
     }
 }
@@ -482,22 +598,25 @@ int main(int argc, char **argv) {
 
     tui_init();
 
-    AppState app;
-    app_init(&app, tui_rows(), tui_cols());
+    {
+        int rows, cols;
+        get_display_dimensions(&rows, &cols);
+        AppState app;
+        app_init(&app, rows, cols);
 
-    for (;;) {
-        app_draw(&app);
-        int key = tui_getkey();
+        for (;;) {
+            app_draw(&app);
+            int key = tui_getkey();
 #ifdef KEY_RESIZE
-        if (key == KEY_RESIZE) {
-            app.rows = tui_rows();
-            app.cols = tui_cols();
-            continue;
-        }
+            if (key == KEY_RESIZE && display_mode == DISPLAY_AUTO) {
+                get_display_dimensions(&app.rows, &app.cols);
+                continue;
+            }
 #endif
-        app_handle_key(&app, key);
-        if (app.quit_requested)
-            break;
+            app_handle_key(&app, key);
+            if (app.quit_requested)
+                break;
+        }
     }
 
     tui_cleanup();

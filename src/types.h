@@ -49,4 +49,12 @@ typedef struct {
     char deleted_at[VIBE_DATETIME_MAX];
 } VibeCalendarEvent;
 
+typedef struct {
+    int id;
+    char key[VIBE_TITLE_MAX];
+    char value[VIBE_CONTENT_MAX];
+    char created_at[VIBE_DATETIME_MAX];
+    char deleted_at[VIBE_DATETIME_MAX];
+} VibeFact;
+
 #endif

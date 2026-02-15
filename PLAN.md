@@ -22,8 +22,8 @@ Terminal personal data assistant. **Status:** Alpha. **Implementation:** C (C++ 
 ```
 
 - **TUI**: curses (ncurses on Linux, PDCurses on DOS); VT102 minimum baseline.
-- **App**: Holds state (current module, focus, prompt mode, content editor); draws layout; F-keys for actions; note cards (Title + Content); multi-line content editor (Enter=newline, F2=Save, Esc=Cancel).
-- **Storage**: Single API (storage.h). File-based only (storage_file.c) on all platforms. All entities use soft-delete where applicable; Trash is a view over deleted items.
+- **App**: Holds state (current module, focus, prompt mode, content editor); draws layout; F-keys for actions; note cards (Title + Content); multi-line content editor with cursor, line numbers (F5), scrolling (Page Up/Down); Enter=newline, Enter+Enter=save, Esc=cancel.
+- **Storage**: Single API (storage.h). File-based only (storage_file.c) on all platforms. All entities use soft-delete where applicable; Trash is a view over deleted items. Supports Notes, Tasks, Contacts, Calendar Events, and Facts (key-value pairs).
 - **Config**: Database path, optional editor path, default view; future: JSON or key=value.
 
 ---
@@ -64,6 +64,7 @@ All user-facing entities support **soft-delete** (deleted_at). Trash lists items
 | Tasks    | Todo list              | Task list; done flag; New/Edit/Delete|
 | Contacts | Contact list           | Contact list/cards; New/Edit/Delete   |
 | Calendar | Events & appointments  | Month grid + event list; New/Edit/Delete |
+| Facts    | Key-value pairs        | Fact list (key = value); New/Edit/Delete |
 | Trash    | Soft-deleted items     | List deleted items; Restore           |
 
 Sidebar lists module names only (no record counters).
@@ -79,7 +80,7 @@ vibe/
 │   ├── app.c, app.h        # App shell: state, F-keys, note cards, content editor
 │   ├── tui.c, tui.h        # Presentation: curses (ncurses/PDCurses), keys, attributes
 │   ├── vibe_config.c, vibe_config.h  # Config layer: paths, defaults
-│   ├── types.h             # Data types: Note, Task, Contact, CalendarEvent
+│   ├── types.h             # Data types: Note, Task, Contact, CalendarEvent, Fact
 │   ├── storage.h            # Storage API: init, *_count, *_list, *_add, *_update, *_delete, *_restore
 │   └── storage_file.c       # File-based backend (all platforms)
 ├── tests/
@@ -102,7 +103,7 @@ Optional future: split views into **src/notes.c**, **src/tasks.c**, etc., each w
 - **F-keys**: F1 Help, F2 New, F3 Edit, F4 Delete, F10 Quit. Shortcuts: n/t/c/a/x switch module; q quit; ? help.
 - **Navigation**: Up/Down in sidebar switch modules; Up/Down in main pane move selection; Tab/Shift+Tab switch focus between sidebar and main.
 - **Note cards**: Notes display as cards (Title + Content). Select a note to view its content.
-- **Content editor**: Multi-line text area for note body. Enter=newline; F2=Save; Esc=Cancel.
+- **Content editor**: Multi-line text area for note body with cursor, line numbers (F5), and scrolling (Page Up/Down). Enter=newline; Enter+Enter=save (two blank lines); Esc=Cancel. Arrow keys move cursor responsively.
 - **CLI**: `--help`, `--version`. Unknown arguments print "unknown argument" to stderr, show help, exit 1.
 
 ---

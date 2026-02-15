@@ -25,6 +25,8 @@ A comprehensive guide to using vibePDA, your terminal personal data assistant.
 
 vibePDA is a terminal-based personal data assistant inspired by classic 1980s software. It provides a unified interface for managing notes, tasks, contacts, calendar events, facts, finances, and documents—all from your terminal.
 
+![vibePDA Demo](images/vibePDA-demo.gif)
+
 ### Key Features
 
 - **1980s-style TUI**: Clean, retro interface with function key navigation
@@ -54,6 +56,10 @@ When you first launch vibePDA, you'll see:
 - **Main pane (right)**: Content for the selected module
 - **Menu bar (top)**: Function key shortcuts
 - **Status bar (bottom)**: Current module and state
+
+| Notes | Tasks | Search | Help |
+|-------|-------|--------|------|
+| ![Notes](images/notes.png) | ![Tasks](images/tasks.png) | ![Search](images/search.png) | ![Help](images/help.png) |
 
 ### Basic Navigation
 

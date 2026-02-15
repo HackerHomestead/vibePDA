@@ -2,6 +2,8 @@
 
 **A terminal personal data assistant** — Notes, Tasks, Contacts, and Calendar in a single TUI, inspired by classic Outlook.
 
+![vibePDA Demo](docs/images/vibePDA-demo.gif)
+
 **Status:** Alpha. Core TUI, storage, and CRUD are in place; polish and full feature parity are ongoing.
 
 **C** implementation with three build targets: **1) Linux**, **2) FreeDOS** (DJGPP), **3) WebAssembly** (Emscripten). Uses **curses** (ncurses on Linux, PDCurses on DOS). Terminal: VT102 minimum; on Linux, modern terminal standards (e.g. SGR, 256 colors) may be used. File-based storage on all platforms (no SQLite).
@@ -25,6 +27,10 @@
 
 - **1980s-style TUI**: Menu bar (F1–F5, F10), status line. Uses curses (ncurses/PDCurses).
 - **Note cards**: Notes display as cards (Title + Content); Up/Down navigate between them.
+
+| Notes | Tasks | Search | Help |
+|:-----:|:-----:|:------:|:----:|
+| [![Notes](docs/images/notes.png)](docs/images/notes.png) | [![Tasks](docs/images/tasks.png)](docs/images/tasks.png) | [![Search](docs/images/search.png)](docs/images/search.png) | [![Help](docs/images/help.png)](docs/images/help.png) |
 - **Multi-line content editor**: Note body uses a bordered text area with cursor, line numbers (F5), and scrolling (Page Up/Down). Enter=newline, Enter+Enter=save, Esc=cancel.
 - **Search/Filter**: Press F5 or / to search/filter items in any module. Filter persists after Enter, press F5 again to clear.
 - **Trash management**: Checkbox selection, select all/none, restore, permanent delete with confirmation.
@@ -118,6 +124,7 @@ make install
 - **CHANGELOG.md**: Version history and changes
 - **PLAN.md**: Technical architecture and design notes
 - **docs/TESTING.md**: Testing documentation
+- **docs/images/**: Screenshots and animated demo (`scripts/gen_screenshots.py` to regenerate)
 
 ## Tests
 
@@ -157,9 +164,12 @@ vibe/
 │   ├── storage.h           # Storage API
 │   └── storage_file.c      # File-based backend (all platforms)
 ├── tests/              # Unit tests (app + storage)
+├── scripts/            # gen_screenshots.py (PNG + GIF for docs)
 ├── README.md, CHANGELOG.md, PLAN.md, VERSION
 └── docs/
-    └── TESTING.md
+    ├── TESTING.md
+    ├── USER_MANUAL.md
+    └── images/          # Screenshots (gen_screenshots.py)
 ```
 
 ---

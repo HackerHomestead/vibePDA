@@ -99,6 +99,12 @@ var (
 	helpStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241")).
 			Padding(0, 1)
+
+	// DOS-style status bar (blue background, white text)
+	statusBarStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("17")).
+			Foreground(lipgloss.Color("15")).
+			Padding(0, 1)
 )
 
 // BuildNumber is set at build time via -ldflags, reads from VERSION file (e.g. 0.3.0)
@@ -192,22 +198,61 @@ func (m Model) Init() tea.Cmd {
 
 // Update handles messages.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
+	routingMsg := msg
+	switch kmsg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
+		s := kmsg.String()
+		switch s {
+		case "ctrl+c", "q", "f12":
 			return m, tea.Quit
-		case "tab":
+		case "tab", "f8":
 			m.focusPane = FocusMain
 			return m, nil
-		case "shift+tab":
+		case "shift+tab", "f9":
 			m.focusPane = FocusSidebar
 			return m, nil
+		case "f1":
+			m.sidebar.Select(ModuleNotes)
+			return m, m.notes.Init()
+		case "f2":
+			// F2: Tasks module when sidebar; Save when main+form
+			if m.focusPane == FocusSidebar {
+				m.sidebar.Select(ModuleTasks)
+				return m, m.tasks.Init()
+			}
+			// Main pane: pass through to module (form save handled there)
+		case "f3":
+			m.sidebar.Select(ModuleContacts)
+			return m, m.contacts.Init()
+		case "f4":
+			m.sidebar.Select(ModuleCalendar)
+			return m, m.calendar.Init()
+		case "f5", "f6", "f7", "f10", "f11":
+			// Route F-keys to main pane when focused; translate to action keys
+			if m.focusPane == FocusMain {
+				mapped := map[string]tea.KeyMsg{
+					"f5":  {Type: tea.KeyRunes, Runes: []rune{'n'}},
+					"f6":  {Type: tea.KeyEnter},
+					"f7":  {Type: tea.KeyRunes, Runes: []rune{'d'}},
+					"f10": {Type: tea.KeyF2},
+					"f11": {Type: tea.KeyEscape},
+				}
+				if fake, ok := mapped[s]; ok {
+					routingMsg = fake
+				} else {
+					return m, nil
+				}
+			} else {
+				return m, nil
+			}
+		default:
+			// Continue to normal routing
 		}
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		m.sidebar.SetSize(msg.Width/4, msg.Height-4)
+		ws := msg.(tea.WindowSizeMsg)
+		m.width = ws.Width
+		m.height = ws.Height
+		m.sidebar.SetSize(ws.Width/4, ws.Height-4)
 		mainW := m.width - sidebarWidth - 10
 		mainH := m.height - 6
 		m.calendar.SetSize(mainW, mainH)
@@ -223,21 +268,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// When Init() runs, the Cmd returns a msg that must reach the module's Update;
 	// otherwise records never populate until the user Tabs (which triggers routing).
 	// Only pass non-KeyMsg so key routing remains correct.
-	if _, isKey := msg.(tea.KeyMsg); !isKey {
+	if _, isKey := routingMsg.(tea.KeyMsg); !isKey {
 		var loadCmd tea.Cmd
-		m.calendar, loadCmd = m.calendar.Update(msg)
+		m.calendar, loadCmd = m.calendar.Update(routingMsg)
 		if loadCmd != nil {
 			return m, loadCmd
 		}
-		m.tasks, loadCmd = m.tasks.Update(msg)
+		m.tasks, loadCmd = m.tasks.Update(routingMsg)
 		if loadCmd != nil {
 			return m, loadCmd
 		}
-		m.notes, loadCmd = m.notes.Update(msg)
+		m.notes, loadCmd = m.notes.Update(routingMsg)
 		if loadCmd != nil {
 			return m, loadCmd
 		}
-		m.contacts, loadCmd = m.contacts.Update(msg)
+		m.contacts, loadCmd = m.contacts.Update(routingMsg)
 		if loadCmd != nil {
 			return m, loadCmd
 		}
@@ -245,40 +290,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Main pane focused: route keys to modules
 	if m.focusPane == FocusMain {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "shift+tab" {
+		if keyMsg, ok := routingMsg.(tea.KeyMsg); ok && keyMsg.String() == "shift+tab" {
 			m.focusPane = FocusSidebar
 			return m, nil
 		}
 		if idx == ModuleCalendar {
 			var cmd tea.Cmd
-			m.calendar, cmd = m.calendar.Update(msg)
+			m.calendar, cmd = m.calendar.Update(routingMsg)
 			return m, cmd
 		}
 		if idx == ModuleTasks {
 			var cmd tea.Cmd
-			m.tasks, cmd = m.tasks.Update(msg)
+			m.tasks, cmd = m.tasks.Update(routingMsg)
 			return m, cmd
 		}
 		if idx == ModuleNotes {
 			var cmd tea.Cmd
-			m.notes, cmd = m.notes.Update(msg)
+			m.notes, cmd = m.notes.Update(routingMsg)
 			return m, cmd
 		}
 		if idx == ModuleContacts {
 			var cmd tea.Cmd
-			m.contacts, cmd = m.contacts.Update(msg)
+			m.contacts, cmd = m.contacts.Update(routingMsg)
 			return m, cmd
 		}
 	}
 
 	// Sidebar focused or other module: route to sidebar
-	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "tab" {
+	if keyMsg, ok := routingMsg.(tea.KeyMsg); ok && keyMsg.String() == "tab" {
 		m.focusPane = FocusMain
 		return m, nil
 	}
 
 	var cmd tea.Cmd
-	m.sidebar, cmd = m.sidebar.Update(msg)
+	m.sidebar, cmd = m.sidebar.Update(routingMsg)
 
 	// Init module when it becomes selected
 	switch m.sidebar.Index() {
@@ -320,27 +365,16 @@ func (m Model) View() string {
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top, sidebarView, mainView)
 
-	help := " Tab: main  ↑/↓ sidebar  q Quit "
-	idx := m.sidebar.Index()
-	if m.focusPane == FocusMain {
-		switch idx {
-		case ModuleCalendar:
-			help = " Shift+Tab: sidebar  ←/→ month  ,/. day  a all  t today  n new  Enter edit  F2 save  Esc cancel  d delete  q Quit "
-		case ModuleTasks:
-			help = " Shift+Tab: sidebar  n new  Enter edit  space toggle  Ctrl+↑/↓ reorder  d delete  q Quit "
-		case ModuleNotes:
-			help = " Shift+Tab: sidebar  n new  Enter edit  F2 save  Esc cancel  d delete  j/k select  q Quit "
-		case ModuleContacts:
-			help = " Shift+Tab: sidebar  n new  Enter edit  F2 save  Esc cancel  d delete  j/k select  q Quit "
-		default:
-			help = " Shift+Tab: sidebar  q Quit "
-		}
-	} else {
-		help = " Tab: main  ↑/↓ modules  q Quit "
-	}
-	helpBar := helpStyle.Render(help)
+	// DOS-style status bar at bottom (blue background, white text)
+	statusBar := statusBarStr(m)
+	statusBar = statusBarStyle.Width(m.width).Render(statusBar)
 
-	return title + "\n" + body + "\n" + helpBar
+	return title + "\n" + body + "\n" + statusBar
+}
+
+// statusBarStr returns the DOS-style status bar content.
+func statusBarStr(m Model) string {
+	return " F1 Notes  F2 Tasks  F3 Contacts  F4 Calendar  |  F5 New  F6 Edit  F7 Del  |  F8 Main  F9 Side  F10 Save  F11 Esc  |  F12 Quit "
 }
 
 func (m Model) mainContent() string {

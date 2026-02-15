@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.5.0] - 2026-02-15
+
+### Added
+
+- **Function key navigation**: F1–F12 for all primary actions
+  - F1 Notes, F2 Tasks, F3 Contacts, F4 Calendar
+  - F5 New, F6 Edit, F7 Delete
+  - F8 Focus main, F9 Focus sidebar
+  - F10 Save (in forms), F11 Cancel (in forms)
+  - F12 Quit
+- **DOS-style status bar**: Fixed bottom bar showing key bindings (blue background, white text)
+
+### Changed
+
+- Navigation: Tab/Shift+Tab retained; ↑/↓ for sidebar list movement
+- Status bar replaces dynamic help bar
+
+---
+
 ## [0.4.1] - 2026-02-15
 
 ### Fixed

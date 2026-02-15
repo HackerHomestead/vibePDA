@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/you/vibe/internal/db"
+	"github.com/you/vibe/internal/ui"
 	"github.com/you/vibe/internal/toast"
 )
 
@@ -56,9 +57,9 @@ func (d contactDelegate) Render(w io.Writer, m list.Model, index int, item list.
 }
 
 var (
-	titleStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
-	cardNameStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
-	cardLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	titleStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ui.ColorAccent))
+	cardNameStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ui.ColorTitleFg))
+	cardLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(ui.ColorTextDim))
 )
 
 // renderContactCard returns a single contact card as a string.
@@ -80,9 +81,9 @@ func renderContactCard(c *db.Contact, selected bool) string {
 	content := strings.Join(lines, "\n")
 	box := lipgloss.NewStyle().Width(cardOuterWidth).Padding(0, 1)
 	if selected {
-		box = box.Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("62")).Background(lipgloss.Color("236"))
+		box = box.Border(ui.RetroBorder).BorderForeground(lipgloss.Color(ui.ColorAccent)).Background(lipgloss.Color(ui.ColorSelectBg))
 	} else {
-		box = box.Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240"))
+		box = box.Border(ui.RetroBorder).BorderForeground(lipgloss.Color(ui.ColorBorder))
 	}
 	return box.Render(content)
 }
@@ -112,8 +113,11 @@ func NewModel(repo *db.ContactsRepo, width, height int) Model {
 	items := []list.Item{}
 	delegate := contactDelegate{}
 	l := list.New(items, delegate, width-4, listHeight)
-	l.Title = ""
+	l.Title = " Contacts "
+	l.SetShowTitle(true)
+	l.Styles.Title = titleStyle
 	l.SetShowStatusBar(false)
+	l.SetShowPagination(false)
 	l.SetFilteringEnabled(false)
 	l.SetShowHelp(false)
 	l.DisableQuitKeybindings()
@@ -363,6 +367,11 @@ func (m *Model) refreshList(contacts []db.Contact) {
 	m.contactList.SetItems(items)
 }
 
+// Count returns the number of contacts in the list.
+func (m Model) Count() int {
+	return len(m.contactList.Items())
+}
+
 // SetSize updates width/height.
 func (m *Model) SetSize(w, h int) {
 	m.width = w
@@ -409,10 +418,9 @@ func (m Model) View() string {
 		return b.String()
 	}
 
-	b.WriteString(titleStyle.Render(" Contacts ") + "\n\n")
-
-	// Multi-column layout when terminal is wide enough
+	// Multi-column layout when terminal is wide enough (list has built-in title)
 	if m.width >= minWidth2Cols {
+		b.WriteString(titleStyle.Render(" Contacts ") + "\n\n")
 		b.WriteString(m.renderGrid())
 	} else {
 		b.WriteString(m.contactList.View())

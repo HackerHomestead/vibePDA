@@ -6,12 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.7.0] - 2026-02-15
+
+### Added
+
+- **Sidebar record counts**: Each module shows count next to title, e.g. "Notes (42)", "Tasks (15)".
+- **CLI `--regenerate`**: Wipe database and recreate with current schema, then exit.
+- **CLI `--upgrade`**: Export data, upgrade schema, re-import (preserves user data).
+- **CLI `--export` / `-e`**: Export data to JSON file.
+- **CLI `--import` / `-i`**: Import data from JSON file.
+- **80's terminal theme**: Phosphor green accent, sharp single/double borders, DOS-style status bar.
+- **External demo data**: `demo/` dir (contacts.txt, notes.txt, tasks.txt, events.txt, theme.json) — Parks and Rec themed.
+
+### Changed
+
+- **Sidebar width**: Narrower (~16 cols), scales to widest title + count.
+- **Tasks list**: Fixed double-spacing between items; reserved height for filter line to prevent overflow.
+- **Pagination**: Disabled on all lists to prevent layout overflow.
+- **Status bar**: Truncated when long hints would wrap; prevents layout jump on module switch.
+- **vibe-seed**: Loads from external files; detects DB lock and shows helpful error when another instance is running.
+
+### Fixed
+
+- Tasks list running off screen with many entries.
+- Title bar disappearing on some modules (Tasks, Notes, Contacts use list built-in title).
+- Sidebar and main pane vertical height mismatch.
+- build-demo disk I/O error when vibePDA has db open — clearer error message.
+
+---
+
 ## [0.6.0] - 2026-02-15
 
 ### Added
 
 - **Trash**: Soft-delete for all modules; deleted items move to Trash. F5 to open Trash, R to restore.
-- **Build demo**: `make build-demo` builds and seeds 100+ Star Wars records per module. `make clean` removes demo db (never touches user db).
+- **Build demo**: `make build-demo` builds and seeds 100+ records per module from `demo/` (Parks and Rec theme). `make clean` removes demo db (never touches user db).
 - **CLI options**: `-v`/`--version` and `-h`/`--help`. `VIBE_DB` env var overrides database path.
 - **Toaster notifications**: Transient "Saved", "Deleted", "Restored" messages on CRUD operations.
 - **Tasks**: Search (`/`), filter (`Shift+F` all/incomplete/complete), sort (`Shift+S` created/due/priority/title). Pretty date ("Today 6pm"). Completed tasks stay in place.

@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/you/vibe/internal/db"
+	"github.com/you/vibe/internal/ui"
 	"github.com/you/vibe/internal/toast"
 )
 
@@ -43,12 +44,12 @@ func (d noteDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 }
 
 var (
-	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
+	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ui.ColorAccent))
 	selectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("15")).
-			Background(lipgloss.Color("62")).
+			Foreground(lipgloss.Color(ui.ColorTitleFg)).
+			Background(lipgloss.Color(ui.ColorAccent)).
 			Padding(0, 1)
-	unselectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	unselectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(ui.ColorText))
 )
 
 // Model is the notes view model.
@@ -68,8 +69,11 @@ func NewModel(repo *db.NotesRepo, width, height int) Model {
 	items := []list.Item{}
 	delegate := noteDelegate{}
 	l := list.New(items, delegate, width-4, listHeight)
-	l.Title = ""
+	l.Title = " Notes "
+	l.SetShowTitle(true)
+	l.Styles.Title = titleStyle
 	l.SetShowStatusBar(false)
+	l.SetShowPagination(false)
 	l.SetFilteringEnabled(false)
 	l.SetShowHelp(false)
 	l.DisableQuitKeybindings()
@@ -262,6 +266,11 @@ func (m *Model) refreshList(notes []db.Note) {
 	m.noteList.SetItems(items)
 }
 
+// Count returns the number of notes in the list.
+func (m Model) Count() int {
+	return len(m.noteList.Items())
+}
+
 // SetSize updates width/height.
 func (m *Model) SetSize(w, h int) {
 	m.width = w
@@ -300,7 +309,6 @@ func (m Model) View() string {
 		return b.String()
 	}
 
-	b.WriteString(titleStyle.Render(" Notes ") + "\n\n")
 	b.WriteString(m.noteList.View())
 
 	return b.String()

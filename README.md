@@ -16,7 +16,7 @@ Built with Go and the [Charm](https://github.com/charmbracelet) ecosystem. SQLit
 | **Calendar** | Events and appointments |
 | **Trash** | Soft-deleted items, restore |
 
-Outlook-style layout: module sidebar (Notes, Tasks, Contacts, Calendar) on the left, main content on the right. No CGO, no ncurses — pure Go.
+Outlook-style layout: module sidebar (Notes, Tasks, Contacts, Calendar, Trash) on the left with record counts, main content on the right. 80's terminal aesthetic (phosphor green, sharp borders). No CGO, no ncurses — pure Go.
 
 ---
 
@@ -58,7 +58,7 @@ cp vibePDA ~/bin/
 
 ### Demo data
 
-Build and seed with 100+ Star Wars–themed records per module:
+Build and seed with 100+ Parks and Rec–themed records per module (data in `demo/`):
 
 ```bash
 make build-demo
@@ -75,9 +75,15 @@ VIBE_DB=./vibe-demo.db ./vibePDA
 vibePDA [options]
   -v, --version    Show build/version
   -h, --help       Show help
+  -r, --regenerate Wipe database and recreate with current schema
+  -u, --upgrade    Export, upgrade schema, re-import (preserves user data)
+  -e, --export F   Export data to JSON file
+  -i, --import F   Import data from JSON file
 ```
 
 Environment: `VIBE_DB` overrides database path (e.g. `VIBE_DB=./vibe-demo.db` for demo).
+
+The sidebar shows record counts next to each module (e.g. "Notes (42)", "Tasks (15)").
 
 ### Global (DOS-style function key bar at bottom)
 
@@ -143,7 +149,7 @@ Optional config file (uses defaults if missing):
 vibe/
 ├── cmd/
 │   ├── vibe/main.go       # Entry point
-│   └── vibe-seed/         # Demo data seeder (Star Wars theme)
+│   └── vibe-seed/         # Demo data seeder (loads from demo/ dir)
 ├── internal/
 │   ├── app/               # Bubble Tea model, layout, navigation
 │   ├── calendar/          # Calendar view (month grid, events, CRUD)

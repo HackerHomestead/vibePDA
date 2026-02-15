@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/you/vibe/internal/dataview"
+	"github.com/you/vibe/internal/ui"
 	"github.com/you/vibe/internal/db"
 	"github.com/you/vibe/internal/toast"
 )
@@ -31,10 +32,10 @@ func (i TrashItem) Description() string { return i.Type + " | " + dataview.Forma
 func (i TrashItem) FilterValue() string { return i.Type + " " + i.DisplayTitle }
 
 var (
-	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
-	headerStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("245"))
-	rowStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	selectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(lipgloss.Color("62")).Padding(0, 1)
+	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ui.ColorAccent))
+	headerStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ui.ColorTextMuted))
+	rowStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color(ui.ColorText))
+	selectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(ui.ColorTitleFg)).Background(lipgloss.Color(ui.ColorAccent)).Padding(0, 1)
 )
 
 type trashDelegate struct{}
@@ -95,6 +96,7 @@ func NewModel(calendarRepo *db.CalendarRepo, tasksRepo *db.TasksRepo, notesRepo 
 	l := list.New([]list.Item{}, delegate, width-4, listHeight)
 	l.Title = ""
 	l.SetShowStatusBar(false)
+	l.SetShowPagination(false)
 	l.SetFilteringEnabled(false)
 	l.SetShowHelp(false)
 	l.DisableQuitKeybindings()
@@ -226,6 +228,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
 	return m, cmd
+}
+
+// Count returns the number of items in trash.
+func (m Model) Count() int {
+	return len(m.list.Items())
 }
 
 // SetSize updates width/height.

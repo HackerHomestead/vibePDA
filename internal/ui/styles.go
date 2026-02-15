@@ -4,48 +4,41 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Outlook-inspired palette: muted grays, blue accent for selection
+// 80's-inspired shared styles (amber accent, sharp borders)
 var (
-	// Title bar
 	TitleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("15")).
-			Background(lipgloss.Color("62")).
+			Foreground(lipgloss.Color(ColorTitleFg)).
+			Background(lipgloss.Color(ColorTitleBg)).
 			Padding(0, 1)
 
-	// Sidebar (left nav, module list: Notes, Tasks, Contacts, Calendar)
 	SidebarStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240")).
+			Border(RetroBorder).
+			BorderForeground(lipgloss.Color(ColorBorder)).
 			Padding(0, 1).
 			MarginRight(1)
 
 	SidebarWidth = 18
 
-	// Main content area
 	MainStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240")).
+			Border(RetroBorder).
+			BorderForeground(lipgloss.Color(ColorBorder)).
 			Padding(0, 1)
 
-	// Selected item in sidebar (Outlook blue highlight)
 	SelectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("15")).
-			Background(lipgloss.Color("62")).
+			Foreground(lipgloss.Color(ColorTitleFg)).
+			Background(lipgloss.Color(ColorAccent)).
 			Padding(0, 1)
 
-	// Unselected sidebar item
 	UnselectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("252")).
+			Foreground(lipgloss.Color(ColorText)).
 			Padding(0, 1)
 
-	// Help bar at bottom
 	HelpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
+			Foreground(lipgloss.Color(ColorTextDim)).
 			Padding(0, 1)
 
-	// Placeholder content styling
 	PlaceholderStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245")).
-			Italic(true)
+				Foreground(lipgloss.Color(ColorTextMuted)).
+				Italic(true)
 )

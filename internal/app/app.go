@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/you/vibe/internal/calendar"
+	"github.com/you/vibe/internal/ui"
 	"github.com/you/vibe/internal/contacts"
 	"github.com/you/vibe/internal/db"
 	"github.com/you/vibe/internal/notes"
@@ -27,7 +29,8 @@ const (
 )
 
 const (
-	sidebarWidth = 20
+	// Sidebar: "Calendar (999)" style = ~16 chars
+	sidebarWidth = 16
 	listHeight   = 12
 )
 
@@ -40,6 +43,18 @@ type moduleItem struct {
 func (i moduleItem) Title() string       { return i.title }
 func (i moduleItem) Description() string { return "" }
 func (i moduleItem) FilterValue() string { return i.title }
+
+// refreshSidebarItems updates the sidebar list with current record counts.
+func (m *Model) refreshSidebarItems() {
+	items := []list.Item{
+		moduleItem{title: fmt.Sprintf("Notes (%d)", m.notes.Count()), id: ModuleNotes},
+		moduleItem{title: fmt.Sprintf("Tasks (%d)", m.tasks.Count()), id: ModuleTasks},
+		moduleItem{title: fmt.Sprintf("Contacts (%d)", m.contacts.Count()), id: ModuleContacts},
+		moduleItem{title: fmt.Sprintf("Calendar (%d)", m.calendar.Count()), id: ModuleCalendar},
+		moduleItem{title: fmt.Sprintf("Trash (%d)", m.trash.Count()), id: ModuleTrash},
+	}
+	m.sidebar.SetItems(items)
+}
 
 // moduleDelegate renders sidebar list items.
 type moduleDelegate struct{}
@@ -63,51 +78,53 @@ func (d moduleDelegate) Render(w io.Writer, m list.Model, index int, item list.I
 }
 
 var (
+	// 80's: amber title bar (CRT phosphor)
 	titleBarStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("15")).
-			Background(lipgloss.Color("62")).
+			Foreground(lipgloss.Color(ui.ColorTitleFg)).
+			Background(lipgloss.Color(ui.ColorTitleBg)).
 			Padding(0, 1)
 
+	// Sharp single-line borders (retro, not rounded)
 	sidebarStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240")).
+			Border(ui.RetroBorder).
+			BorderForeground(lipgloss.Color(ui.ColorBorder)).
 			Padding(0, 1).
 			MarginRight(1)
 
 	sidebarStyleFocused = lipgloss.NewStyle().
-				Border(lipgloss.ThickBorder()).
-				BorderForeground(lipgloss.Color("62")).
+				Border(ui.RetroBorderFocused).
+				BorderForeground(lipgloss.Color(ui.ColorAccent)).
 				Padding(0, 1).
 				MarginRight(1)
 
 	mainStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240")).
+			Border(ui.RetroBorder).
+			BorderForeground(lipgloss.Color(ui.ColorBorder)).
 			Padding(0, 1)
 
 	mainStyleFocused = lipgloss.NewStyle().
-				Border(lipgloss.ThickBorder()).
-				BorderForeground(lipgloss.Color("62")).
+				Border(ui.RetroBorderFocused).
+				BorderForeground(lipgloss.Color(ui.ColorAccent)).
 				Padding(0, 1)
 
 	selectedItemStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("15")).
-				Background(lipgloss.Color("62")).
+				Foreground(lipgloss.Color(ui.ColorTitleFg)).
+				Background(lipgloss.Color(ui.ColorAccent)).
 				Padding(0, 1)
 
 	unselectedItemStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("252")).
+				Foreground(lipgloss.Color(ui.ColorText)).
 				Padding(0, 1)
 
 	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
+			Foreground(lipgloss.Color(ui.ColorTextDim)).
 			Padding(0, 1)
 
 	// DOS-style status bar (blue background, white text)
 	statusBarStyle = lipgloss.NewStyle().
-			Background(lipgloss.Color("17")).
-			Foreground(lipgloss.Color("15")).
+			Background(lipgloss.Color(ui.ColorStatusBg)).
+			Foreground(lipgloss.Color(ui.ColorTitleFg)).
 			Padding(0, 1)
 )
 
@@ -151,6 +168,7 @@ func New(defaultView string, calendarRepo *db.CalendarRepo, tasksRepo *db.TasksR
 	l := list.New(items, delegate, sidebarWidth, listHeight)
 	l.Title = " Modules"
 	l.SetShowStatusBar(false)
+	l.SetShowPagination(false)
 	l.SetFilteringEnabled(false)
 	l.SetShowHelp(false)
 	l.DisableQuitKeybindings()
@@ -224,6 +242,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	m.refreshSidebarItems()
 	routingMsg := msg
 	switch kmsg := msg.(type) {
 	case tea.KeyMsg:
@@ -288,9 +307,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		ws := msg.(tea.WindowSizeMsg)
 		m.width = ws.Width
 		m.height = ws.Height
-		m.sidebar.SetSize(ws.Width/4, ws.Height-4)
 		mainW := m.width - sidebarWidth - 10
-		mainH := m.height - 6
+		mainH := m.height - 5
+		if mainH < 8 {
+			mainH = 8
+		}
+		m.sidebar.SetSize(sidebarWidth, mainH)
 		m.calendar.SetSize(mainW, mainH)
 		m.tasks.SetSize(mainW, mainH)
 		m.notes.SetSize(mainW, mainH)
@@ -397,11 +419,17 @@ func (m Model) View() string {
 	title := titleBarStyle.Render(titleStr)
 	title = lipgloss.Place(m.width, 1, lipgloss.Left, lipgloss.Top, title)
 
+	// Same height for both panes; stay within terminal (title=1, status=1, buffer)
+	bodyHeight := m.height - 5
+	if bodyHeight < 8 {
+		bodyHeight = 8
+	}
+
 	sidebarBox := sidebarStyle
 	if m.focusPane == FocusSidebar {
 		sidebarBox = sidebarStyleFocused
 	}
-	sidebarView := sidebarBox.Width(sidebarWidth + 4).Height(m.height - 6).Render(m.sidebar.View())
+	sidebarView := sidebarBox.Width(sidebarWidth + 4).Height(bodyHeight).Render(m.sidebar.View())
 
 	mainContent := m.mainContent()
 	mainWidth := m.width - sidebarWidth - 10
@@ -409,24 +437,37 @@ func (m Model) View() string {
 	if m.focusPane == FocusMain {
 		mainBox = mainStyleFocused
 	}
-	mainView := mainBox.Width(mainWidth).Height(m.height - 6).Render(mainContent)
+	mainView := mainBox.Width(mainWidth).Height(bodyHeight).Render(mainContent)
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top, sidebarView, mainView)
 
 	// DOS-style status bar at bottom (blue background, white text)
-	statusBar := statusBarStr(m)
+	// Truncate to prevent wrapping when hint changes (keeps layout stable)
+	statusBar := truncateToWidth(statusBarStr(m), m.width-2)
 	statusBar = statusBarStyle.Width(m.width).Render(statusBar)
 
 	out := title + "\n" + body + "\n"
 	if m.toast != "" {
 		toasterStyle := lipgloss.NewStyle().
-			Background(lipgloss.Color("62")).
-			Foreground(lipgloss.Color("15")).
+			Background(lipgloss.Color(ui.ColorAccent)).
+			Foreground(lipgloss.Color(ui.ColorTitleFg)).
 			Padding(0, 2)
 		toaster := toasterStyle.Render(" " + m.toast + " ")
 		out += lipgloss.Place(m.width, 1, lipgloss.Center, lipgloss.Left, toaster) + "\n"
 	}
 	return out + statusBar
+}
+
+// truncateToWidth shortens s to at most max runes to prevent status bar wrapping.
+func truncateToWidth(s string, max int) string {
+	if max <= 0 {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max-1]) + "…"
 }
 
 // statusBarStr returns the DOS-style status bar content (dynamic by active module).

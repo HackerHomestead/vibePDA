@@ -1,0 +1,124 @@
+# Terminal Size Testing Plan
+
+This document describes how to test vibePDA at different terminal sizes, from classic 80×24 up to modern HD displays.
+
+---
+
+## Target Sizes
+
+| Size      | Rows | Cols | Use case                     |
+|----------|------|------|------------------------------|
+| **80×24**| 24   | 80   | VT100/IBM baseline, retro UX |
+| 120×30   | 30   | 120  | Common desktop terminal      |
+| 160×40   | 40   | 160  | Large terminal / split pane  |
+| 200×50   | 50   | 200  | HD display, full-screen TUI  |
+
+**Baseline:** 80×24 is the minimum supported size. All layouts should remain usable (no overlap, truncation graceful).
+
+---
+
+## Layout Anatomy
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Title bar (1 row)                                                        │
+├────────────┬────────────────────────────────────────────────────────────┤
+│ Sidebar    │ Main content                                                │
+│ ~16 cols   │ Remaining width                                             │
+│ + borders  │ Module titles with counts: "Notes (42)", "Tasks (15)"       │
+│            │                                                             │
+├────────────┴────────────────────────────────────────────────────────────┤
+│ Status bar (1 row)                                                       │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Title bar:** 1 row, full width
+- **Sidebar:** ~16 runes content + borders + margin; shows record count per module
+- **Main:** Flexes with terminal width
+- **Status bar:** 1 row, full width
+
+---
+
+## Verification Checklist (per size)
+
+### Layout
+
+- [ ] Title bar renders full width, no overlap
+- [ ] Sidebar visible, not clipped
+- [ ] Main content area has usable width
+- [ ] Status bar renders full width
+- [ ] Borders render correctly (no broken corners)
+
+### Module-specific (Notes, Tasks, Contacts, Calendar, Trash)
+
+- [ ] **Notes:** List and preview truncate gracefully; no horizontal overflow
+- [ ] **Tasks:** List items fit; filter/sort labels visible
+- [ ] **Contacts:** Card grid adapts (2–4 cols); cards don’t wrap badly
+- [ ] **Calendar:** Month grid fits; event list visible; day numbers aligned
+- [ ] **Trash:** Table columns fit; truncation uses "…" where needed
+
+### Interaction
+
+- [ ] Selection highlight visible and readable
+- [ ] Help text (bottom) not cut off
+- [ ] Toasts appear and dismiss correctly
+
+---
+
+## Responsive Breakpoints
+
+| Width (cols) | Behavior                                  |
+|--------------|-------------------------------------------|
+| &lt; 80       | Below minimum; show warning if possible   |
+| 80–99        | 2-column Contacts; narrow main content    |
+| 100–119      | 2–3 columns; comfortable main content     |
+| 120+         | 3–4 columns; full layout                  |
+| 160+         | Spacious; more cards/columns where used   |
+
+Contacts uses `minWidth2Cols`, `minWidth3Cols`, `minWidth4Cols` to decide column count. These should be validated against the breakpoints above.
+
+---
+
+## How to Test
+
+### Manual
+
+1. Resize terminal to target size (e.g. `80x24`).
+2. Run: `./vibe` (or `make run`).
+3. Walk through each module and verify the checklist.
+4. Repeat for each target size.
+
+### Resize in Common Terminals
+
+- **Alacritty / Kitty / WezTerm:** Window resize or config
+- **GNOME Terminal:** `Edit → Preferences → Profiles → Scrolling` or resize window
+- **tmux:** `resize-window -x 80 -y 24` (or `C-b :resize-window -x 120 -y 30`)
+
+### Scripted (future)
+
+A small script could:
+
+1. Start vibe in a subprocess
+2. Send a resize signal (e.g. `SIGWINCH`) and capture output
+3. Snapshot rendering at each size for regression checks
+
+---
+
+## Minimum Usable Size
+
+- **Columns:** 80 (below this, layout may break)
+- **Rows:** 24 (below this, content may be clipped)
+
+If the terminal is smaller, the app should ideally display a message like:
+
+> Terminal too small. Please resize to at least 80×24.
+
+(Implementation is optional for MVP.)
+
+---
+
+## References
+
+- VT100: 80×24 default
+- IBM PC: 80×25
+- Modern terminals: typically 120×30 or larger on HD displays

@@ -24,7 +24,7 @@ check-go:
 build: check-go
 	$(GO) build -ldflags "-X github.com/you/vibe/internal/app.BuildNumber=$(BUILD_VER)" -o vibePDA ./cmd/vibe
 
-# build-demo: build and seed demo db with 100+ Star Wars records per module (notes, tasks, contacts, events)
+# build-demo: build and seed demo db with 100+ records per module (data from demo/ dir)
 build-demo: check-go
 	$(GO) build -ldflags "-X github.com/you/vibe/internal/app.BuildNumber=$(BUILD_VER)" -o vibePDA ./cmd/vibe
 	$(GO) run ./cmd/vibe-seed -db=$(DEMO_DB)

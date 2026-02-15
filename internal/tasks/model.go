@@ -59,23 +59,23 @@ func (d taskDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 	}
 	line := i.Title()
 	if desc := i.Description(); desc != "" {
-		line += "  " + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(desc)
+		line += "  " + lipgloss.NewStyle().Foreground(lipgloss.Color(ui.ColorTextDim)).Render(desc)
 	}
 	if index == m.Index() {
 		line = selectedStyle.Render("▶ " + line)
 	} else {
 		line = unselectedStyle.Render("  " + line)
 	}
-	io.WriteString(w, line+"\n")
+	io.WriteString(w, line)
 }
 
 var (
-	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
+	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ui.ColorAccent))
 	selectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("15")).
-			Background(lipgloss.Color("62")).
+			Foreground(lipgloss.Color(ui.ColorTitleFg)).
+			Background(lipgloss.Color(ui.ColorAccent)).
 			Padding(0, 1)
-	unselectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	unselectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(ui.ColorText))
 )
 
 // Model is the tasks view model.
@@ -97,8 +97,11 @@ func NewModel(repo *db.TasksRepo, width, height int) Model {
 	items := []list.Item{}
 	delegate := taskDelegate{}
 	l := list.New(items, delegate, width-4, listHeight)
-	l.Title = ""
+	l.Title = " Tasks "
+	l.SetShowTitle(true)
+	l.Styles.Title = titleStyle
 	l.SetShowStatusBar(false)
+	l.SetShowPagination(false)
 	l.SetFilteringEnabled(true)
 	l.SetShowHelp(false)
 	l.DisableQuitKeybindings()
@@ -394,11 +397,17 @@ func (m *Model) refreshList(tasks []db.Task) {
 	m.taskList.SetItems(items)
 }
 
-// SetSize updates width/height.
+// Count returns the number of tasks in the list.
+func (m Model) Count() int {
+	return len(m.taskList.Items())
+}
+
+// SetSize updates width/height. Tasks list has filter line (unlike Notes), so reserve extra.
 func (m *Model) SetSize(w, h int) {
 	m.width = w
 	m.height = h
-	listH := h - 6
+	// Reserve lines: title(1) + filter(1) + items; match Notes behavior for viewport
+	listH := h - 7
 	if listH < 4 {
 		listH = 4
 	}
@@ -438,9 +447,8 @@ func (m Model) View() string {
 		return b.String()
 	}
 
-	b.WriteString(titleStyle.Render(" Tasks ") + "  ")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(
-		fmt.Sprintf("filter: %s | sort: %s", filterLabel, m.sortBy)) + "\n\n")
+	// Update list title with filter/sort (built-in title stays visible in list viewport)
+	m.taskList.Title = fmt.Sprintf(" Tasks   filter: %s | sort: %s", filterLabel, m.sortBy)
 	b.WriteString(m.taskList.View())
 
 	return b.String()

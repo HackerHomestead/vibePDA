@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/you/vibe/internal/ui"
 )
 
 // ColumnDef defines a column: title and width in runes.
@@ -17,9 +18,9 @@ type ColumnDef struct {
 // Cells are truncated to column width.
 func RenderTable(cols []ColumnDef, rows [][]string, selectedIndex int) string {
 	var b strings.Builder
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("245"))
-	rowStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(lipgloss.Color("62")).Padding(0, 1)
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ui.ColorTextMuted))
+	rowStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ui.ColorText))
+	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ui.ColorTitleFg)).Background(lipgloss.Color(ui.ColorAccent)).Padding(0, 1)
 
 	// Header row
 	parts := make([]string, len(cols))

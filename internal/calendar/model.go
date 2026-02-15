@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/you/vibe/internal/db"
+	"github.com/you/vibe/internal/ui"
 	"github.com/you/vibe/internal/toast"
 )
 
@@ -61,20 +62,20 @@ func (d eventDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 }
 
 var (
-	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
-	gridStyle  = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240"))
+	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ui.ColorAccent))
+	gridStyle  = lipgloss.NewStyle().BorderStyle(ui.RetroBorder).BorderForeground(lipgloss.Color(ui.ColorBorder))
 	dayStyle   = lipgloss.NewStyle().Width(3).Align(lipgloss.Center)
 	selectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("15")).
-			Background(lipgloss.Color("62")).
+			Foreground(lipgloss.Color(ui.ColorTitleFg)).
+			Background(lipgloss.Color(ui.ColorAccent)).
 			Padding(0, 1)
-	unselectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	unselectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(ui.ColorText))
 	todayStyle      = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("15")).
-			Background(lipgloss.Color("241")).
+			Foreground(lipgloss.Color(ui.ColorTitleFg)).
+			Background(lipgloss.Color(ui.ColorTextDim)).
 			Padding(0, 1)
-	attendeeCardNameStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
-	attendeeCardLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	attendeeCardNameStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ui.ColorTitleFg))
+	attendeeCardLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(ui.ColorTextDim))
 )
 
 // Form steps: 0=title, 1=date, 2=start, 3=end, 4=all-day, 5=notes, 6=attendees
@@ -156,9 +157,9 @@ func (d attendeeDelegate) Render(w io.Writer, m list.Model, index int, item list
 
 	box := lipgloss.NewStyle().Width(attendeeCardWidth + 4).Padding(0, 1)
 	if selected {
-		box = box.Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("62")).Background(lipgloss.Color("236"))
+		box = box.Border(ui.RetroBorder).BorderForeground(lipgloss.Color(ui.ColorAccent)).Background(lipgloss.Color(ui.ColorSelectBg))
 	} else {
-		box = box.Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240"))
+		box = box.Border(ui.RetroBorder).BorderForeground(lipgloss.Color(ui.ColorBorder))
 	}
 	io.WriteString(w, box.Render(content))
 }
@@ -201,6 +202,7 @@ func NewModel(repo *db.CalendarRepo, contactsRepo *db.ContactsRepo, width, heigh
 	l := list.New(items, delegate, width-4, listHeight)
 	l.Title = ""
 	l.SetShowStatusBar(false)
+	l.SetShowPagination(false)
 	l.SetFilteringEnabled(false)
 	l.SetShowHelp(false)
 	l.DisableQuitKeybindings()
@@ -216,7 +218,8 @@ func NewModel(repo *db.CalendarRepo, contactsRepo *db.ContactsRepo, width, heigh
 
 	al := list.New([]list.Item{}, attendeeDelegate{}, width-4, 14)
 	al.SetShowStatusBar(false)
-	al.SetFilteringEnabled(true)  // Type to filter/search contacts
+	al.SetShowPagination(false)
+	al.SetFilteringEnabled(true) // Type to filter/search contacts
 	al.SetShowHelp(false)
 	al.DisableQuitKeybindings()
 
@@ -827,6 +830,11 @@ func (m *Model) syncCalendarToSelectedEvent() {
 	}
 }
 
+// Count returns the number of events in the event list.
+func (m Model) Count() int {
+	return len(m.eventList.Items())
+}
+
 // SetSize updates width/height.
 func (m *Model) SetSize(w, h int) {
 	m.width = w
@@ -890,7 +898,7 @@ func (m Model) View() string {
 		if len(m.viewAttendees) > 0 {
 			b.WriteString("\nAttendees: " + strings.Join(m.viewAttendees, ", ") + "\n")
 		}
-		b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("Enter or Esc to close") + "\n")
+		b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color(ui.ColorTextDim)).Render("Enter or Esc to close") + "\n")
 		return b.String()
 	}
 

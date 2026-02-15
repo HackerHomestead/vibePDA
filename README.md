@@ -38,6 +38,25 @@
 
 ---
 
+## Storage
+
+vibePDA uses **file-based storage** — no database. One plain text file per entity type, stored as tab-separated values (TSV). Default location: `~/.local/share/vibe` on Linux, or `.` on DOS. Override with `--data-dir`.
+
+| File | Format |
+|------|--------|
+| `notes.txt` | `id` \t `title` \t `content` \t `created_at` \t `deleted_at` |
+| `tasks.txt` | `id` \t `title` \t `done` \t `due_date` \t `priority` \t `created_at` \t `deleted_at` |
+| `contacts.txt` | `id` \t `name` \t `email` \t `phone` \t `notes` \t `created_at` \t `deleted_at` |
+| `events.txt` | `id` \t `title` \t `description` \t `start_at` \t `end_at` \t `all_day` \t `created_at` \t `deleted_at` |
+| `facts.txt` | `id` \t `key` \t `value` \t `created_at` \t `deleted_at` |
+
+- **Soft delete**: `deleted_at` empty = active; timestamp = in Trash. Delete moves items to Trash.
+- **Permanent delete**: Removes records from the file (cannot be undone).
+- **Sanitization**: Tab and newline characters in user input are replaced with spaces.
+- **Human-readable**: Files can be edited with any text editor or processed with standard Unix tools.
+
+---
+
 ## Requirements
 
 - **Linux**: GCC, GNU Make, **ncurses** (`libncurses-dev`). File-based storage only (no SQLite).

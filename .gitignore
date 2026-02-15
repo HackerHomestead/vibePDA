@@ -31,3 +31,10 @@ config.mk
 *.db
 *.db-journal
 config.json
+
+# C port (cpp/)
+cpp/vibePDA
+cpp/vibePDA.exe
+cpp/config.h
+cpp/src/*.o
+cpp/*.tar.gz

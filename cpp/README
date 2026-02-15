@@ -1,0 +1,30 @@
+vibePDA C port - VT102 and FreeDOS console
+==========================================
+
+Build targets (GNU-style Makefile):
+
+  make                  Native Linux (x86_64 or i386)
+  make TARGET=linux-ia32  Force 32-bit Linux (requires gcc -m32)
+  make TARGET=dos         FreeDOS (requires DJGPP: i586-pc-msdosdjgpp-gcc)
+
+Install:
+
+  make install [PREFIX=/usr/local] [DESTDIR=/staging]
+
+Terminal and console:
+
+  - VT102: Use a VT100/VT102 compatible terminal or emulator (80x24).
+  - DOS:   Standard 80x25 console. Build with TARGET=dos (DJGPP).
+
+Architectures:
+
+  - Linux x86_64: default when building on 64-bit host.
+  - Linux i386:   make TARGET=linux-ia32 (requires gcc-multilib / libc6-dev-i386 on Debian).
+  - FreeDOS:      make TARGET=dos (32-bit DPMI via DJGPP cross-compiler).
+
+GNU standards:
+
+  make all       Build
+  make clean     Remove built files
+  make install   Install to $(DESTDIR)$(prefix)
+  make dist      Create tarball

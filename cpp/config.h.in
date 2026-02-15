@@ -1,0 +1,18 @@
+/* config.h.in - template for config.h (vibePDA C port) */
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#define PACKAGE "@PACKAGE@"
+#define VERSION "@VERSION@"
+
+/* Terminal: VT100/VT102 compatible (80x24 or 80x25 on DOS) */
+#define COLS_DEFAULT 80
+#define ROWS_DEFAULT 24
+#define ROWS_DOS     25
+
+/* Defined by build: PLATFORM_LINUX or PLATFORM_DOS */
+/* #undef PLATFORM_LINUX */
+/* #undef PLATFORM_DOS */
+/* #undef VT102_CONSOLE */
+
+#endif

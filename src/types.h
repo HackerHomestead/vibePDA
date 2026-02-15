@@ -1,0 +1,52 @@
+/* types.h - Data types for vibePDA entities */
+
+#ifndef VIBE_TYPES_H
+#define VIBE_TYPES_H
+
+#define VIBE_TITLE_MAX 256
+#define VIBE_CONTENT_MAX 4096
+#define VIBE_NAME_MAX 128
+#define VIBE_EMAIL_MAX 128
+#define VIBE_PHONE_MAX 64
+#define VIBE_DATETIME_MAX 32
+
+typedef struct {
+    int id;
+    char title[VIBE_TITLE_MAX];
+    char content[VIBE_CONTENT_MAX];
+    char created_at[VIBE_DATETIME_MAX];
+    char deleted_at[VIBE_DATETIME_MAX];
+} VibeNote;
+
+typedef struct {
+    int id;
+    char title[VIBE_TITLE_MAX];
+    int done;
+    char due_date[VIBE_DATETIME_MAX];
+    int priority;
+    char created_at[VIBE_DATETIME_MAX];
+    char deleted_at[VIBE_DATETIME_MAX];
+} VibeTask;
+
+typedef struct {
+    int id;
+    char name[VIBE_NAME_MAX];
+    char email[VIBE_EMAIL_MAX];
+    char phone[VIBE_PHONE_MAX];
+    char notes[VIBE_CONTENT_MAX];
+    char created_at[VIBE_DATETIME_MAX];
+    char deleted_at[VIBE_DATETIME_MAX];
+} VibeContact;
+
+typedef struct {
+    int id;
+    char title[VIBE_TITLE_MAX];
+    char description[VIBE_CONTENT_MAX];
+    char start_at[VIBE_DATETIME_MAX];
+    char end_at[VIBE_DATETIME_MAX];
+    int all_day;
+    char created_at[VIBE_DATETIME_MAX];
+    char deleted_at[VIBE_DATETIME_MAX];
+} VibeCalendarEvent;
+
+#endif

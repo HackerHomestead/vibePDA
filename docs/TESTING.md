@@ -1,124 +1,70 @@
-# Terminal Size Testing Plan
+# Testing vibePDA (C)
 
-This document describes how to test vibePDA at different terminal sizes, from classic 80×24 up to modern HD displays.
-
----
-
-## Target Sizes
-
-| Size      | Rows | Cols | Use case                     |
-|----------|------|------|------------------------------|
-| **80×24**| 24   | 80   | VT100/IBM baseline, retro UX |
-| 120×30   | 30   | 120  | Common desktop terminal      |
-| 160×40   | 40   | 160  | Large terminal / split pane  |
-| 200×50   | 50   | 200  | HD display, full-screen TUI  |
-
-**Baseline:** 80×24 is the minimum supported size. All layouts should remain usable (no overlap, truncation graceful).
+Unit and manual testing for the C build. **Status:** Alpha.
 
 ---
 
-## Layout Anatomy
+## Unit tests
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│ Title bar (1 row)                                                        │
-├────────────┬────────────────────────────────────────────────────────────┤
-│ Sidebar    │ Main content                                                │
-│ ~16 cols   │ Remaining width                                             │
-│ + borders  │ Module titles with counts: "Notes (42)", "Tasks (15)"       │
-│            │                                                             │
-├────────────┴────────────────────────────────────────────────────────────┤
-│ Status bar (1 row)                                                       │
-└─────────────────────────────────────────────────────────────────────────┘
+### Build and run
+
+```bash
+make test
 ```
 
-- **Title bar:** 1 row, full width
-- **Sidebar:** ~16 runes content + borders + margin; shows record count per module
-- **Main:** Flexes with terminal width
-- **Status bar:** 1 row, full width
+This builds `run_tests` and runs it. Exit code 0 means all tests passed.
+
+### What is tested
+
+- **App (UI/UX)**  
+  - `app_init()` sets initial state (module 0, sidebar focus, no menu, no prompt, no content editor).  
+  - `app_handle_key()`: module switch (Up/Down in sidebar), focus (Tab/Shift+Tab), quit (q, F10), help (F1, ?), and CRUD hotkeys (F2/N new, F3/E edit, F4/D delete) produce the expected `AppState` (e.g. `current_module`, `focus_sidebar`, `quit_requested`, `prompt_mode`, `content_edit_mode`).  
+  - Content editor: F2 in Notes → enter title → Enter advances to `content_edit_mode`; Esc cancels and clears `content_edit_mode`.
+
+- **Storage (backend)**  
+  - `storage_init()` and counts: init in a temp dir, counts return 0 when empty. Then (unless disabled) the test seeds **dummy data** and asserts counts. See **Dummy data** below.
+
+- **CLI (integration)**  
+  - `./vibePDA --foo` prints "unknown argument" to stderr and exits with code 1.
+
+Tests do **not** start the TUI or terminal (no `tui_init`). They only call `app_init`, `app_handle_key`, and storage API so they are safe to run in CI or headless environments.
+
+### Dummy data (Parks and Rec themed)
+
+Storage tests can seed the backend with fake notes, tasks, contacts, and calendar events inspired by *Parks and Recreation*. The data is **configurable** and **random** (by default).
+
+- **Record count** — Set `VIBE_TEST_RECORDS` to the number of records to create (split roughly evenly across notes, tasks, contacts, events). Default: **100**. Set to **0** to skip seeding and only run the empty-storage checks.
+- **Reproducibility** — Set `VIBE_TEST_SEED` to an integer to fix the random seed (e.g. for CI). If unset, the seed is based on the current time.
+
+Examples:
+
+```bash
+make test
+VIBE_TEST_RECORDS=50 make test
+VIBE_TEST_RECORDS=0 make test
+VIBE_TEST_SEED=42 VIBE_TEST_RECORDS=100 make test
+```
 
 ---
 
-## Verification Checklist (per size)
+## Layout and terminal size
 
-### Layout
-
-- [ ] Title bar renders full width, no overlap
-- [ ] Sidebar visible, not clipped
-- [ ] Main content area has usable width
-- [ ] Status bar renders full width
-- [ ] Borders render correctly (no broken corners)
-
-### Module-specific (Notes, Tasks, Contacts, Calendar, Trash)
-
-- [ ] **Notes:** List and preview truncate gracefully; no horizontal overflow
-- [ ] **Tasks:** List items fit; filter/sort labels visible
-- [ ] **Contacts:** Card grid adapts (2–4 cols); cards don’t wrap badly
-- [ ] **Calendar:** Month grid fits; event list visible; day numbers aligned
-- [ ] **Trash:** Table columns fit; truncation uses "…" where needed
-
-### Interaction
-
-- [ ] Selection highlight visible and readable
-- [ ] Help text (bottom) not cut off
-- [ ] Toasts appear and dismiss correctly
+- **Minimum**: 80×24 (VT102 baseline). Layout assumes at least this; smaller terminals may clip content.
+- **Manual check**: Resize to 80×24, 120×30, etc. Confirm menu bar, sidebar, and main pane render; note cards show Title + Content; content editor uses a bordered text area.
 
 ---
 
-## Responsive Breakpoints
+## Interaction (1980s-style TUI)
 
-| Width (cols) | Behavior                                  |
-|--------------|-------------------------------------------|
-| &lt; 80       | Below minimum; show warning if possible   |
-| 80–99        | 2-column Contacts; narrow main content    |
-| 100–119      | 2–3 columns; comfortable main content     |
-| 120+         | 3–4 columns; full layout                  |
-| 160+         | Spacious; more cards/columns where used   |
+- **F-keys**: F1 Help, F2 New, F3 Edit, F4 Delete, F10 Quit. Shortcuts: n/t/c/a/x switch module; q quit; ? help.
+- **Navigation**: Up/Down in sidebar switch modules; Up/Down in main pane move selection; Tab/Shift+Tab switch focus between sidebar and main.
+- **Note cards**: Notes display as cards (Title + Content). Select a note to view its content in the main pane.
+- **Content editor**: When adding/editing a note body, a bordered multi-line text area appears. Enter inserts newline; F2 saves; Esc cancels and exits content editor.
 
-Contacts uses `minWidth2Cols`, `minWidth3Cols`, `minWidth4Cols` to decide column count. These should be validated against the breakpoints above.
+Manual test: run `./vibePDA`, press F2 (New), type a title, Enter, type content, F2 to save. Press Esc to cancel if needed.
 
 ---
 
-## How to Test
+## Running a subset of tests
 
-### Manual
-
-1. Resize terminal to target size (e.g. `80x24`).
-2. Run: `./vibe` (or `make run`).
-3. Walk through each module and verify the checklist.
-4. Repeat for each target size.
-
-### Resize in Common Terminals
-
-- **Alacritty / Kitty / WezTerm:** Window resize or config
-- **GNOME Terminal:** `Edit → Preferences → Profiles → Scrolling` or resize window
-- **tmux:** `resize-window -x 80 -y 24` (or `C-b :resize-window -x 120 -y 30`)
-
-### Scripted (future)
-
-A small script could:
-
-1. Start vibe in a subprocess
-2. Send a resize signal (e.g. `SIGWINCH`) and capture output
-3. Snapshot rendering at each size for regression checks
-
----
-
-## Minimum Usable Size
-
-- **Columns:** 80 (below this, layout may break)
-- **Rows:** 24 (below this, content may be clipped)
-
-If the terminal is smaller, the app should ideally display a message like:
-
-> Terminal too small. Please resize to at least 80×24.
-
-(Implementation is optional for MVP.)
-
----
-
-## References
-
-- VT100: 80×24 default
-- IBM PC: 80×25
-- Modern terminals: typically 120×30 or larger on HD displays
+The test runner is a single binary. To add filters or separate app vs storage tests, extend `tests/test_app.c` and `tests/test_storage.c` (or the runner) with optional arguments or environment variables; for now, `make test` runs the full suite. Use `VIBE_TEST_RECORDS=0` to run only the empty-storage assertions without dummy data.

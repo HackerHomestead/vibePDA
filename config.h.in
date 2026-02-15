@@ -1,0 +1,13 @@
+/* config.h.in - template for config.h */
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#define PACKAGE "@PACKAGE@"
+#define VERSION "@VERSION@"
+
+/* vibePDA build config. Terminal: VT102 min; curses (ncurses/PDCurses). 80x24 (80x25 DOS) */
+#define COLS_DEFAULT 80
+#define ROWS_DEFAULT 24
+#define ROWS_DOS     25
+
+#endif

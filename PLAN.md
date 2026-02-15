@@ -1,253 +1,139 @@
-# vibePDA — Console Personal Data Assistant
+# vibePDA — Main branch plan (C/C++)
 
-## Overview
-
-A terminal-based (TUI) personal data assistant written in Go, targeting Linux (Ubuntu). Uses the Charm ecosystem for a polished terminal UI, SQLite for portable data storage, and JSON for configuration.
+Terminal personal data assistant. **Status:** Alpha. **Implementation:** C (C++ optional). **Build targets:** 1) Linux, 2) FreeDOS (DJGPP), 3) WebAssembly (Emscripten). **TUI:** curses (ncurses on Linux, PDCurses on DOS). **Terminal:** VT102 minimum; on Linux, modern terminal standards are allowed. GNU Make and Autotools.
 
 ---
 
-## Architecture
+## Architecture (layers)
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    TUI Layer (Bubble Tea)                    │
-│  ┌─────────────┐ ┌─────────────┐ ┌───────────────────────┐  │
-│  │   Main      │ │   Views     │ │   Bubbles Components  │  │
-│  │   App Loop  │ │  (Lipgloss) │ │ List, Input, Table…   │  │
-│  └─────────────┘ └─────────────┘ └───────────────────────┘  │
-├─────────────────────────────────────────────────────────────┤
-│                    Data Layer                                │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │  Repository / DAO  →  SQLite (modernc.org/sqlite)   │    │
-│  └─────────────────────────────────────────────────────┘    │
-├─────────────────────────────────────────────────────────────┤
-│                    Config Layer                              │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │  Config Loader  →  JSON (~/.config/vibe/config.json) │    │
-│  └─────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Presentation — TUI (tui.c/h)                                           │
+│  curses (ncurses on Linux, PDCurses on DOS); VT102 minimum              │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Application — App shell (app.c/h)                                      │
+│  Menu bar, sidebar, main pane; F-keys; note cards; content editor        │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Data — Storage API (storage.h, storage_file.c) — file-based only       │
+│  CRUD per entity: notes, tasks, contacts, calendar_events; soft-delete   │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Config (vibe_config) — Paths, defaults (XDG, ~/.config/vibe/)           │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
----
-
-## Tech Stack
-
-| Layer      | Choice                    | Rationale                                              |
-|-----------|---------------------------|--------------------------------------------------------|
-| TUI       | **Bubble Tea**            | Functional TUI framework, well-documented, widely used |
-| Styling   | **Lipgloss**              | Declarative styling for borders, colors, layout        |
-| Components| **Bubbles**               | List, TextInput, Viewport, Table, Help, etc.           |
-| Database  | **modernc.org/sqlite**    | Pure Go, no CGO; easier build & portability on Linux   |
-| Config    | **JSON**                  | Standard, portable, human-editable                     |
-
-No ncurses or CGO required — keeps builds simple and cross-compilation friendly.
+- **TUI**: curses (ncurses on Linux, PDCurses on DOS); VT102 minimum baseline.
+- **App**: Holds state (current module, focus, prompt mode, content editor); draws layout; F-keys for actions; note cards (Title + Content); multi-line content editor (Enter=newline, F2=Save, Esc=Cancel).
+- **Storage**: Single API (storage.h). File-based only (storage_file.c) on all platforms. All entities use soft-delete where applicable; Trash is a view over deleted items.
+- **Config**: Database path, optional editor path, default view; future: JSON or key=value.
 
 ---
 
-## Personal Data Assistant Features (MVP)
+## Tech stack (C/C++)
 
-| Module   | Description                    | Data Model                          |
-|----------|--------------------------------|-------------------------------------|
-| **Notes**| Quick notes / scratchpad      | id, title, content, created_at, tags |
-| **Tasks**| Todo / task list with status  | id, title, done, due_date, priority |
-| **Contacts** | Simple contact list       | id, name, email, phone, notes       |
-| **Calendar** | Events & appointments   | id, title, description, start, end, all_day |
-
-Future: reminders, journal entries, recurring events.
-
-**Sidebar / "Modules"**: The left sidebar shows four fixed modules (Notes, Tasks, Contacts, Calendar). The label "Folders" was removed — these are modules, not file/folder hierarchies. Future MVP: optional user-created folders or categories (e.g. Work/Personal) for organizing notes/tasks within a module.
+| Layer    | Choice                 | Notes                          |
+|----------|------------------------|---------------------------------|
+| Language | C11 (C++ optional)     | std=c11; no C++ required yet   |
+| TUI      | ncurses (Linux), PDCurses (DOS) | tui.c/h; VT102 min baseline |
+| Storage  | File-based only        | storage.h + storage_file.c      |
+| Build    | GNU Make, Autoconf, Automake | TARGET=linux\|dos\|webasm |
+| Config   | XDG, key=value or JSON | config.c/h                      |
 
 ---
 
-## Project Structure
+## Data model (schema)
+
+Entities map to C structs in **types.h** and to storage backends (tables or flat files).
+
+| Entity          | Purpose        | Main fields (types.h)                          |
+|-----------------|----------------|-------------------------------------------------|
+| **Note**        | Scratchpad     | id, title, content, created_at, deleted_at     |
+| **Task**        | Todo           | id, title, done, due_date, priority, created_at, deleted_at |
+| **Contact**     | Contact list   | id, name, email, phone, notes, created_at, deleted_at |
+| **CalendarEvent** | Appointments | id, title, description, start_at, end_at, all_day, deleted_at |
+| **Trash**       | View only      | Restore = clear deleted_at for selected entity |
+
+All user-facing entities support **soft-delete** (deleted_at). Trash lists items where deleted_at IS NOT NULL; restore clears deleted_at.
+
+---
+
+## Modules (views)
+
+| Module   | Description           | Data / view                          |
+|----------|------------------------|--------------------------------------|
+| Notes    | Scratchpad, quick notes| Note list; New/Edit/Delete           |
+| Tasks    | Todo list              | Task list; done flag; New/Edit/Delete|
+| Contacts | Contact list           | Contact list/cards; New/Edit/Delete   |
+| Calendar | Events & appointments  | Month grid + event list; New/Edit/Delete |
+| Trash    | Soft-deleted items     | List deleted items; Restore           |
+
+Sidebar lists module names only (no record counters).
+
+---
+
+## Project structure (C/C++)
 
 ```
 vibe/
-├── cmd/vibe/main.go             # Entry point, opens DB, creates repo
-├── internal/
-│   ├── app/
-│   │   └── app.go               # Bubble Tea model, sidebar, calendar integration
-│   ├── calendar/
-│   │   └── model.go             # Calendar view: month grid, event list, add/delete
-│   ├── config/
-│   │   └── config.go            # JSON config loader
-│   ├── db/
-│   │   ├── db.go                # SQLite connection, schema migrations
-│   │   └── calendar.go          # CalendarRepo CRUD
-│   └── ui/
-│       ├── styles.go            # Lipgloss style definitions
-│       └── views/               # Placeholder views (notes, tasks, contacts)
-│           └── views.go
-├── go.mod
-├── go.sum
-├── PLAN.md
-└── README.md
+├── src/
+│   ├── main.c              # Entry; parse_args (--help, --version); TUI loop
+│   ├── app.c, app.h        # App shell: state, F-keys, note cards, content editor
+│   ├── tui.c, tui.h        # Presentation: curses (ncurses/PDCurses), keys, attributes
+│   ├── vibe_config.c, vibe_config.h  # Config layer: paths, defaults
+│   ├── types.h             # Data types: Note, Task, Contact, CalendarEvent
+│   ├── storage.h            # Storage API: init, *_count, *_list, *_add, *_update, *_delete, *_restore
+│   └── storage_file.c       # File-based backend (all platforms)
+├── tests/
+│   ├── run_tests.c
+│   ├── test_app.c
+│   └── test_storage.c
+├── Makefile                # TARGET=linux|dos|webasm; all, clean, rebuild, test, install
+├── config.h.in, configure.ac, Makefile.am
+├── VERSION, README.md, CHANGELOG.md
+└── docs/
+    └── TESTING.md
 ```
+
+Optional future: split views into **src/notes.c**, **src/tasks.c**, etc., each with draw_* and handle_key_* for that module; app.c would delegate to them. For the main-branch refactor, app.c remains the single view layer and uses storage API for (when implemented) list/add/edit/delete.
 
 ---
 
-## Configuration (JSON)
+## Interaction
 
-**Location:** `~/.config/vibe/config.json` (XDG_CONFIG_HOME fallback to `~/.config`)
-
-```json
-{
-  "database_path": "~/.local/share/vibe/vibe.db",
-  "editor": "",
-  "theme": "default",
-  "default_view": "tasks"
-}
-```
-
-- `database_path`: SQLite file; `~` expands to home dir (default: `~/.local/share/vibe/vibe.db`)
-- `editor`: Optional external editor for long notes (vim, nano, etc.)
-- `theme`: Reserved for future themes
-- `default_view`: Which module to show on startup (`notes`, `tasks`, `contacts`, or `calendar`)
+- **F-keys**: F1 Help, F2 New, F3 Edit, F4 Delete, F10 Quit. Shortcuts: n/t/c/a/x switch module; q quit; ? help.
+- **Navigation**: Up/Down in sidebar switch modules; Up/Down in main pane move selection; Tab/Shift+Tab switch focus between sidebar and main.
+- **Note cards**: Notes display as cards (Title + Content). Select a note to view its content.
+- **Content editor**: Multi-line text area for note body. Enter=newline; F2=Save; Esc=Cancel.
+- **CLI**: `--help`, `--version`. Unknown arguments print "unknown argument" to stderr, show help, exit 1.
 
 ---
 
-## Dependencies (go.mod)
+## Build targets
 
-```go
-module github.com/you/vibe
+| Target   | make / make all        | Output            |
+|----------|------------------------|-------------------|
+| Linux    | make                  | vibePDA           |
+| FreeDOS  | make TARGET=dos        | vibePDA.exe       |
+| WebAssembly | make TARGET=webasm  | vibePDA.js, .wasm |
 
-go 1.21
-
-require (
-    github.com/charmbracelet/bubbletea v0.26.0
-    github.com/charmbracelet/bubbles v0.20.0
-    github.com/charmbracelet/lipgloss v0.11.0
-    modernc.org/sqlite v1.31.0
-)
-```
-
-**Ubuntu system dependencies:** None. Pure Go + SQLite; no CGO or ncurses.
+Autotools: `autoreconf -fi && ./configure && make && make install`. CLI: `--help`, `--version`.
 
 ---
 
-## Key Implementation Notes
+## Phases (main branch, C/C++)
 
-### Bubble Tea Flow
-
-1. **Model**: Holds app state (current view, selected item, data cache).
-2. **Update**: Handles key events, navigation, CRUD actions.
-3. **View**: Renders via Lipgloss and Bubbles components.
-4. **Init**: Loads config and DB, returns initial Cmd.
-
-### Views
-
-- **Main menu**: Bubbles List to switch between Notes / Tasks / Contacts / Calendar.
-- **Notes**: Bubbles List + Viewport for content preview; TextInput for new/edit.
-- **Tasks**: Bubbles Table or List with checkboxes.
-- **Contacts**: Bubbles Table for name, email, phone.
-- **Calendar**: Month grid (Lipgloss layout) + List of upcoming events; TextInput for new/edit event.
-
-### Navigation
-
-- `Tab` / `Shift+Tab`: Switch views or panels.
-- `j/k` or `↑/↓`: List/table navigation (vim-style optional).
-- `Enter`: Open/edit item.
-- `n`: New item.
-- `d`: Delete (with confirmation).
-- `q` or `Esc`: Quit or back.
-- **Calendar**: `h/l` or `←/→`: Previous/next month; `t`: Today.
-
-### Database Schema (SQLite)
-
-```sql
--- Notes
-CREATE TABLE notes (
-    id INTEGER PRIMARY KEY,
-    title TEXT NOT NULL,
-    content TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- Tasks
-CREATE TABLE tasks (
-    id INTEGER PRIMARY KEY,
-    title TEXT NOT NULL,
-    done INTEGER DEFAULT 0,
-    due_date DATE,
-    priority INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- Contacts
-CREATE TABLE contacts (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    email TEXT,
-    phone TEXT,
-    notes TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- Calendar events
-CREATE TABLE calendar_events (
-    id INTEGER PRIMARY KEY,
-    title TEXT NOT NULL,
-    description TEXT,
-    start_at DATETIME NOT NULL,
-    end_at DATETIME NOT NULL,
-    all_day INTEGER DEFAULT 0,
-    location TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
-
----
-
-## Build & Run (Linux)
-
-**Requirement:** Go 1.21+ (for Charm libs and modernc/sqlite). On Ubuntu:
-
-```bash
-# Option A: snap (latest Go)
-sudo snap install go --classic
-
-# Option B: official installer
-# https://go.dev/dl/
-```
-
-Then:
-
-```bash
-# Clone / cd into project
-cd vibe
-
-# Fetch deps
-go mod tidy
-
-# Build
-go build -o vibe ./cmd/vibe
-
-# Run
-./vibe
-```
-
-Optional: install to `~/bin` or `/usr/local/bin`.
-
-**Distribution:** `make build-package` (or `make all`) produces `dist/vibePDA-<version>.tar.gz` with the binary and docs. All markdown docs have ASCII `.txt` equivalents; `make docs-txt` regenerates them via `scripts/md2txt.go`.
-
----
-
-## Suggested Phases
-
-1. **Phase 1**: Project scaffolding, config loading, DB init with migrations. ✅
-2. **Phase 2**: Bubble Tea skeleton, main menu, single view (e.g. Tasks). ✅
-3. **Phase 3**: CRUD for Tasks, Notes, Contacts, and Calendar. (Calendar ✅; Notes, Tasks, Contacts pending)
-4. **Phase 4**: Polish: keybindings, help text, error handling. (partial)
-5. **Phase 5**: Optional: external editor, themes, backup/export.
+1. **Scaffolding** — Makefile, config.h, TUI, build targets. ✅  
+2. **Layout** — Menu bar, sidebar, main pane, F-keys. ✅  
+3. **Config layer** — config.c/h: db path, defaults (XDG). ✅  
+4. **Data layer** — types.h; storage.h API (counts, then list/add/update/delete/restore); storage_file only (stubs ✅)  
+5. **Views** — List/detail and CRUD in app; note cards; content editor. ✅  
+6. **Polish** — Resize handling for note cards, toasts, export/import, backup.
 
 ---
 
 ## References
 
-- [Bubble Tea](https://github.com/charmbracelet/bubbletea) — TUI framework
-- [Lipgloss](https://github.com/charmbracelet/lipgloss) — Styling
-- [Bubbles](https://github.com/charmbracelet/bubbles) — UI components
-- [Charm GitHub](https://github.com/charmbracelet)
-- [modernc.org/sqlite](https://modernc.org/sqlite) — Pure Go SQLite
+- VT102 minimum; modern Linux terminal (ECMA-48, SGR, etc.)  
+- DJGPP (FreeDOS)  
+- Emscripten (WebAssembly)
+
+

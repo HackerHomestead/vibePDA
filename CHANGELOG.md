@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.8.0-alpha] - 2026-02-15
+
+**Alpha release.** Core TUI, storage, and CRUD in place.
+
+### Added
+
+- **1980s-style TUI**: Curses (ncurses on Linux, PDCurses on DOS). Menu bar (F1–F4, F10), status line, F-keys for actions.
+- **Note cards**: Notes display as Title + Content; Up/Down navigate between them.
+- **Multi-line content editor**: Note body uses bordered text area; Enter=newline, F2=Save, Esc=Cancel.
+- **Unit tests**: `make test` runs app (UI state, key handling, content editor) and storage tests. CLI integration: `--foo` prints "unknown argument", exits 1.
+- **Make targets**: `make clean all` and `make rebuild` remove all binaries and object files before rebuilding. Linux targets use ncurses by default.
+
+### Changed
+
+- **Documentation**: README, PLAN, docs/TESTING updated for alpha status, curses TUI, note cards, content editor, make clean/rebuild.
+- **Unknown arguments**: Print "unknown argument" to stderr, show help, exit 1.
+
+---
+
 ## [0.7.1] - 2026-02-15
 
 ### Added

@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **copy_str**: Added null and max<=0 guards for safety.
 - **Documentation**: Enhanced file headers in storage_file.c, storage.h, types.h, main.c, app.c, tui.c, vibe_config.c.
 - **Screenshots**: Fixed layout overlap (sidebar vs main content), added module headers, updated Notes to bordered card format, Tasks to `[x] id title` format.
+- **Box-drawing characters**: Note cards, contact cards, and content editor now use Unicode box-drawing (┌ ─ ┐ │ ├ ┤ └ ┘) instead of ASCII + - | for a classic TUI look.
 
 ---
 

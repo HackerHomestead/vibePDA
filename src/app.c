@@ -2,6 +2,7 @@
  *
  * 1980s-style TUI: menu bar, sidebar, main pane, F-keys, status line.
  * Handles CRUD, content editor, search/filter, trash. Draws note cards, lists.
+ * Uses Unicode box-drawing characters (U+2500 block) for borders.
  */
 #include "app.h"
 #include "tui.h"
@@ -11,6 +12,34 @@
 #include <string.h>
 #include <stdlib.h>
 
+/* Box-drawing characters (Unicode U+2500 block, UTF-8) */
+#define BOX_TL "\xe2\x94\x8c"   /* ┌ U+250C top-left */
+#define BOX_TR "\xe2\x94\x90"   /* ┐ U+2510 top-right */
+#define BOX_BL "\xe2\x94\x94"   /* └ U+2514 bottom-left */
+#define BOX_BR "\xe2\x94\x98"   /* ┘ U+2518 bottom-right */
+#define BOX_H  "\xe2\x94\x80"   /* ─ U+2500 horizontal */
+#define BOX_V  "\xe2\x94\x82"   /* │ U+2502 vertical */
+#define BOX_LT "\xe2\x94\x9c"   /* ├ U+251C left-T */
+#define BOX_RT "\xe2\x94\xa4"   /* ┤ U+2524 right-T */
+
+static void box_top(int row, int col, int w) {
+    tui_goto(row, col);
+    tui_putstr(BOX_TL);
+    for (int i = 0; i < w; i++) tui_putstr(BOX_H);
+    tui_putstr(BOX_TR);
+}
+static void box_sep(int row, int col, int w) {
+    tui_goto(row, col);
+    tui_putstr(BOX_LT);
+    for (int i = 0; i < w; i++) tui_putstr(BOX_H);
+    tui_putstr(BOX_RT);
+}
+static void box_bottom(int row, int col, int w) {
+    tui_goto(row, col);
+    tui_putstr(BOX_BL);
+    for (int i = 0; i < w; i++) tui_putstr(BOX_H);
+    tui_putstr(BOX_BR);
+}
 static const char *module_names[] = {
     "Notes", "Tasks", "Contacts", "Calendar", "Facts", "Finances", "Documents", "Trash"
 };
@@ -238,26 +267,20 @@ static void draw_note_card(AppState *a, int main_col, int main_width, int top, i
     if (box_width < 10) box_width = 10;
 
     /* Card top border */
-    tui_goto(top, box_left);
-    tui_putchar('+');
-    for (int i = 0; i < box_width; i++) tui_putchar('-');
-    tui_putchar('+');
+    box_top(top, box_left, box_width);
 
     /* Title row */
     tui_goto(top + 1, box_left);
-    tui_putchar('|');
+    tui_putstr(BOX_V);
     tui_attr_bold();
     tui_putstr(" Title: ");
     tui_putstr(n->title[0] ? n->title : "(no title)");
     tui_attr_normal();
     for (int i = 8 + (int)strlen(n->title[0] ? n->title : "(no title)"); i < box_width; i++) tui_putchar(' ');
-    tui_putchar('|');
+    tui_putstr(BOX_V);
 
     /* Separator */
-    tui_goto(top + 2, box_left);
-    tui_putchar('|');
-    for (int i = 0; i < box_width; i++) tui_putchar('-');
-    tui_putchar('|');
+    box_sep(top + 2, box_left, box_width);
 
     /* Content rows */
     const char *p = n->content;
@@ -269,7 +292,7 @@ static void draw_note_card(AppState *a, int main_col, int main_width, int top, i
     if (content_width < 1) content_width = 1;
     while (line < max_lines) {
         tui_goto(top + 3 + line, box_left);
-        tui_putchar('|');
+        tui_putstr(BOX_V);
         int col = 1;
         while (i < (int)strlen(n->content) && col < box_width - 1) {
             char ch = p[i++];
@@ -279,22 +302,19 @@ static void draw_note_card(AppState *a, int main_col, int main_width, int top, i
         }
         if (i < (int)strlen(n->content) && p[i] == '\n') i++;
         for (; col < box_width - 1; col++) tui_putchar(' ');
-        tui_putchar('|');
+        tui_putstr(BOX_V);
         line++;
         if (i >= (int)strlen(n->content)) break;
     }
     for (; line < max_lines; line++) {
         tui_goto(top + 3 + line, box_left);
-        tui_putchar('|');
+        tui_putstr(BOX_V);
         for (int c = 1; c < box_width - 1; c++) tui_putchar(' ');
-        tui_putchar('|');
+        tui_putstr(BOX_V);
     }
 
     /* Bottom border */
-    tui_goto(top + 3 + max_lines, box_left);
-    tui_putchar('+');
-    for (int i = 0; i < box_width; i++) tui_putchar('-');
-    tui_putchar('+');
+    box_bottom(top + 3 + max_lines, box_left, box_width);
 
     /* Card index hint */
     tui_goto(top + 4 + max_lines, box_left);
@@ -348,50 +368,41 @@ static void draw_contact_card(AppState *a, int main_col, int main_width, int top
     if (box_width < 10) box_width = 10;
 
     /* Card top border */
-    tui_goto(top, box_left);
-    tui_putchar('+');
-    for (int i = 0; i < box_width; i++) tui_putchar('-');
-    tui_putchar('+');
+    box_top(top, box_left, box_width);
 
     /* Name row (bold, like business card header) */
     tui_goto(top + 1, box_left);
-    tui_putchar('|');
+    tui_putstr(BOX_V);
     tui_attr_bold();
     tui_putstr(" ");
     tui_putstr(c->name[0] ? c->name : "(no name)");
     tui_attr_normal();
     for (int i = 1 + (int)strlen(c->name[0] ? c->name : "(no name)"); i < box_width - 1; i++) tui_putchar(' ');
-    tui_putchar('|');
+    tui_putstr(BOX_V);
 
     /* Separator */
-    tui_goto(top + 2, box_left);
-    tui_putchar('|');
-    for (int i = 0; i < box_width; i++) tui_putchar('-');
-    tui_putchar('|');
+    box_sep(top + 2, box_left, box_width);
 
     /* Email row */
     tui_goto(top + 3, box_left);
-    tui_putchar('|');
+    tui_putstr(BOX_V);
     tui_putstr(" Email: ");
     tui_putstr(c->email[0] ? c->email : "-");
     for (int i = 7 + (int)strlen(c->email[0] ? c->email : "-"); i < box_width - 1; i++) tui_putchar(' ');
-    tui_putchar('|');
+    tui_putstr(BOX_V);
 
     /* Phone row */
     tui_goto(top + 4, box_left);
-    tui_putchar('|');
+    tui_putstr(BOX_V);
     tui_putstr(" Phone: ");
     tui_putstr(c->phone[0] ? c->phone : "-");
     for (int i = 7 + (int)strlen(c->phone[0] ? c->phone : "-"); i < box_width - 1; i++) tui_putchar(' ');
-    tui_putchar('|');
+    tui_putstr(BOX_V);
 
     /* Notes section (if present) */
     int row = top + 5;
     if (c->notes[0]) {
-        tui_goto(row, box_left);
-        tui_putchar('|');
-        for (int i = 0; i < box_width - 2; i++) tui_putchar('-');
-        tui_putchar('|');
+        box_sep(row, box_left, box_width);
         row++;
 
         const char *p = c->notes;
@@ -403,7 +414,7 @@ static void draw_contact_card(AppState *a, int main_col, int main_width, int top
         if (content_width < 1) content_width = 1;
         while (line < max_lines) {
             tui_goto(row + line, box_left);
-            tui_putchar('|');
+            tui_putstr(BOX_V);
             int col = 1;
             while (i < (int)strlen(c->notes) && col < box_width - 1) {
                 char ch = p[i++];
@@ -413,24 +424,21 @@ static void draw_contact_card(AppState *a, int main_col, int main_width, int top
             }
             if (i < (int)strlen(c->notes) && p[i] == '\n') i++;
             for (; col < box_width - 1; col++) tui_putchar(' ');
-            tui_putchar('|');
+            tui_putstr(BOX_V);
             line++;
             if (i >= (int)strlen(c->notes)) break;
         }
         for (; line < max_lines; line++) {
             tui_goto(row + line, box_left);
-            tui_putchar('|');
+            tui_putstr(BOX_V);
             for (int col = 1; col < box_width - 1; col++) tui_putchar(' ');
-            tui_putchar('|');
+            tui_putstr(BOX_V);
         }
         row += max_lines;
     }
 
     /* Bottom border */
-    tui_goto(row, box_left);
-    tui_putchar('+');
-    for (int i = 0; i < box_width; i++) tui_putchar('-');
-    tui_putchar('+');
+    box_bottom(row, box_left, box_width);
 
     /* Card index hint */
     tui_goto(row + 1, box_left);
@@ -812,24 +820,18 @@ static void draw_content_editor(AppState *a) {
     if (text_width < 5) text_width = 5;
 
     /* Top border */
-    tui_goto(CONTENT_BOX_TOP, CONTENT_BOX_LEFT);
-    tui_putchar('+');
-    for (int i = 0; i < box_width; i++) tui_putchar('-');
-    tui_putchar('+');
+    box_top(CONTENT_BOX_TOP, CONTENT_BOX_LEFT, box_width);
 
     /* Title row */
     tui_goto(CONTENT_BOX_TOP + 1, CONTENT_BOX_LEFT);
-    tui_putchar('|');
+    tui_putstr(BOX_V);
     tui_putstr(" Title: ");
     tui_putstr(a->prompt_data[0][0] ? a->prompt_data[0] : "(no title)");
     for (int i = 8 + (int)strlen(a->prompt_data[0][0] ? a->prompt_data[0] : "(no title)"); i < box_width; i++) tui_putchar(' ');
-    tui_putchar('|');
+    tui_putstr(BOX_V);
 
     /* Separator */
-    tui_goto(CONTENT_BOX_TOP + 2, CONTENT_BOX_LEFT);
-    tui_putchar('|');
-    for (int i = 0; i < box_width; i++) tui_putchar('-');
-    tui_putchar('|');
+    box_sep(CONTENT_BOX_TOP + 2, CONTENT_BOX_LEFT, box_width);
 
     /* Content rows - render line by line with cursor and scrolling */
     const char *p = a->content_edit_buf;
@@ -859,7 +861,7 @@ static void draw_content_editor(AppState *a) {
     
     while (line < content_rows) {
         tui_goto(CONTENT_BOX_TOP + 3 + line, CONTENT_BOX_LEFT);
-        tui_putchar('|');
+        tui_putstr(BOX_V);
         
         /* Line number */
         if (a->content_edit_show_line_numbers) {
@@ -895,7 +897,7 @@ static void draw_content_editor(AppState *a) {
             }
             tui_putchar(' ');
         }
-        tui_putchar('|');
+        tui_putstr(BOX_V);
         line++;
         line_num++;
         if (i >= a->content_edit_len) {
@@ -909,14 +911,14 @@ static void draw_content_editor(AppState *a) {
     }
     for (; line < content_rows; line++) {
         tui_goto(CONTENT_BOX_TOP + 3 + line, CONTENT_BOX_LEFT);
-        tui_putchar('|');
+        tui_putstr(BOX_V);
         if (a->content_edit_show_line_numbers) {
             char num_buf[16];
             int n = snprintf(num_buf, sizeof(num_buf), "%4d ", line_num + 1);
             if (n > 0 && n < (int)sizeof(num_buf)) tui_putstr(num_buf);
         }
         for (int c = 0; c < text_width; c++) tui_putchar(' ');
-        tui_putchar('|');
+        tui_putstr(BOX_V);
         line_num++;
     }
     
@@ -931,10 +933,7 @@ static void draw_content_editor(AppState *a) {
     }
 
     /* Bottom border */
-    tui_goto(CONTENT_BOX_TOP + 3 + content_rows, CONTENT_BOX_LEFT);
-    tui_putchar('+');
-    for (int i = 0; i < box_width; i++) tui_putchar('-');
-    tui_putchar('+');
+    box_bottom(CONTENT_BOX_TOP + 3 + content_rows, CONTENT_BOX_LEFT, box_width);
 
     /* Hint */
     tui_goto(CONTENT_BOX_TOP + 4 + content_rows, CONTENT_BOX_LEFT);

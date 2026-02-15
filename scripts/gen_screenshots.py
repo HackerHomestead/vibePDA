@@ -118,13 +118,13 @@ def render_notes_view(module_idx=0):
         else:
             draw.text((PADDING + BORDER, y), text, font=font, fill=FG)
 
-    # Main content header + note card (bordered, matches actual app)
+    # Main content header + note card (box-drawing style, matches actual app)
     draw.text((MAIN_X, content_top + CELL_H), "Notes (3 items)", font=font_bold, fill=FG)
     card_x = MAIN_X
     card_w = img.width - card_x - PADDING - BORDER
     card_top = content_top + 2 * CELL_H
     if card_w > 20:
-        # Bordered card: Title + Content (one note at a time)
+        # Box-drawing card: ┌───┐ │ Title │ ├───┤ │ content │ └───┘
         draw.rectangle([(card_x, card_top), (card_x + card_w, card_top + 5 * CELL_H)],
                        outline=FG, fill=(25, 25, 25))
         draw.text((card_x + 8, card_top + 4), " Title: Grocery list", font=font_bold, fill=CARD_TITLE)

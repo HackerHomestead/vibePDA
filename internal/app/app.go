@@ -419,8 +419,8 @@ func (m Model) View() string {
 	title := titleBarStyle.Render(titleStr)
 	title = lipgloss.Place(m.width, 1, lipgloss.Left, lipgloss.Top, title)
 
-	// Same height for both panes; stay within terminal (title=1, status=1, buffer)
-	bodyHeight := m.height - 5
+	// Same height for both panes; reserve one line for toast so layout never jumps
+	bodyHeight := m.height - 6
 	if bodyHeight < 8 {
 		bodyHeight = 8
 	}
@@ -446,16 +446,17 @@ func (m Model) View() string {
 	statusBar := truncateToWidth(statusBarStr(m), m.width-2)
 	statusBar = statusBarStyle.Width(m.width).Render(statusBar)
 
-	out := title + "\n" + body + "\n"
+	// Toast in a fixed slot so it never adds a line or shifts the status bar
+	toastLine := "\n"
 	if m.toast != "" {
 		toasterStyle := lipgloss.NewStyle().
 			Background(lipgloss.Color(ui.ColorAccent)).
 			Foreground(lipgloss.Color(ui.ColorTitleFg)).
 			Padding(0, 2)
 		toaster := toasterStyle.Render(" " + m.toast + " ")
-		out += lipgloss.Place(m.width, 1, lipgloss.Center, lipgloss.Left, toaster) + "\n"
+		toastLine = lipgloss.Place(m.width, 1, lipgloss.Center, lipgloss.Left, toaster) + "\n"
 	}
-	return out + statusBar
+	return title + "\n" + body + "\n" + toastLine + statusBar
 }
 
 // truncateToWidth shortens s to at most max runes to prevent status bar wrapping.

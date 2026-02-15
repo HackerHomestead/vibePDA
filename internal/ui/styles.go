@@ -41,4 +41,12 @@ var (
 	PlaceholderStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color(ColorTextMuted)).
 				Italic(true)
+
+	// EmptyStateStyle is used for "No items" / "No events" etc. in list views.
+	EmptyStateStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorTextDim))
 )
+
+// EmptyStateView renders a dim empty-state message (e.g. "No events.").
+func EmptyStateView(message string) string {
+	return EmptyStateStyle.Render(message)
+}

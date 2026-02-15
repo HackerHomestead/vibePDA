@@ -116,8 +116,40 @@ func (r *CalendarRepo) Update(e *Event) error {
 
 // Delete removes an event.
 func (r *CalendarRepo) Delete(id int64) error {
+	_, _ = r.db.Exec(`DELETE FROM event_attendees WHERE event_id=?`, id)
 	_, err := r.db.Exec(`DELETE FROM calendar_events WHERE id=?`, id)
 	return err
+}
+
+// ListAttendees returns contact IDs for an event.
+func (r *CalendarRepo) ListAttendees(eventID int64) ([]int64, error) {
+	rows, err := r.db.Query(`SELECT contact_id FROM event_attendees WHERE event_id=? ORDER BY contact_id`, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var cid int64
+		if err := rows.Scan(&cid); err != nil {
+			return nil, err
+		}
+		ids = append(ids, cid)
+	}
+	return ids, rows.Err()
+}
+
+// SetAttendees replaces attendees for an event.
+func (r *CalendarRepo) SetAttendees(eventID int64, contactIDs []int64) error {
+	if _, err := r.db.Exec(`DELETE FROM event_attendees WHERE event_id=?`, eventID); err != nil {
+		return err
+	}
+	for _, cid := range contactIDs {
+		if _, err := r.db.Exec(`INSERT INTO event_attendees (event_id, contact_id) VALUES (?, ?)`, eventID, cid); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func scanEvents(rows *sql.Rows) ([]Event, error) {

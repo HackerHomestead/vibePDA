@@ -1,4 +1,4 @@
-# Vibe — Console Personal Data Assistant
+# vibePDA — Console Personal Data Assistant
 
 ## Overview
 

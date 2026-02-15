@@ -1,23 +1,61 @@
 # Changelog
 
-All notable changes to Vibe are documented in this file.
+All notable changes to vibePDA are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased]
+## [0.4.0] - 2026-02-14
 
 ### Added
 
+- **Tests**: `go test ./...` for db, config, and app packages
+  - NotesRepo, TasksRepo, ContactsRepo, CalendarRepo CRUD
+  - Config load, expandPath, Default
+  - indexForView (sidebar module routing)
+- **configure script**: Checks Go 1.24.2+, generates config.mk
+- **make check**: Runs test suite (alias for make test)
+- **make clean**: Removes built binary
+- **scripts/install-go.sh**: Installs Go 1.24.2 to /usr/local/go
+- **Calendar day navigation**: `,` prev day, `.` next day, `a` all events
+- **Contacts card view**: Records shown as cards with name, email, phone, notes
+- **Pane focus hint**: Thick border on focused pane (sidebar vs main)
+
+### Changed
+
+- **Project name**: Vibe → vibePDA (UI, README, CHANGELOG, PLAN)
+- **Save key**: F2 (replaces Ctrl+S/Ctrl+Enter for terminal compatibility)
+- **Records on startup**: Main pane shows records without pressing Tab
+- **Build environment**: Go 1.24.2+ required; Makefile uses config.mk from configure
+
+### Fixed
+
+- Records not visible when switching sidebar modules until Tab pressed
+- CHANGELOG dates corrected to 2026
+- go.mod Go version (1.24 for charmbracelet/bubbles compatibility)
+
+---
+
+## [0.3.0] - 2026-02-14
+
+### Added
+
+- **Notes module**: Full CRUD (first line = title, rest = content, textarea)
+- **Contacts module**: Full CRUD (name, email, phone, notes)
+- **Calendar attendees**: Add contacts as event attendees (form step 4)
+- **Tasks edit**: Enter on selected task opens edit form
+- **Tasks reorder**: Ctrl+Up / Ctrl+Down to move tasks
 - **Tasks module**: Full CRUD for to-do items
   - Add, delete, and toggle done status
   - SQLite `tasks` table with title, done, due_date, priority
   - Keybindings: `n` new, `space`/`Enter` toggle, `d` delete, `j`/`k` navigate
 
-- **Calendar event edit**: Press `Enter` on selected event to open edit form
+- **Calendar event edit**: Enter on selected event opens edit form
 
-- **Calendar notes**: Multiline notes/description field for events
+- **Calendar notes**: Multiline notes/description field
+
+- **Calendar form**: Ctrl+S / Ctrl+Enter save, Esc cancel; Tab in Notes = indent; Ctrl+Tab = Notes→Attendees
   - Uses Bubbles textarea component
   - Stored in `description` column
 
@@ -27,7 +65,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Form steps: Title → Start (HH:MM) → End (HH:MM) → Notes
   - Tab / Enter advance fields, Shift+Tab go back
 
-- **Build number**: Epoch timestamp in title bar when built with `-ldflags`
+- **Build number**: Version from VERSION file in title bar when built with `-ldflags`
   - Makefile target: `make build`
 
 ### Changed
@@ -42,7 +80,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.2.0] - 2025-02-14
+## [0.2.0] - 2026-02-14
 
 ### Added
 
@@ -53,7 +91,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [0.1.0] - 2025-02-14
+## [0.1.0] - 2026-02-14
 
 ### Added
 

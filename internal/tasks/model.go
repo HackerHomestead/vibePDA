@@ -64,13 +64,14 @@ var (
 
 // Model is the tasks view model.
 type Model struct {
-	repo      *db.TasksRepo
-	taskList  list.Model
-	width     int
-	height    int
-	err       string
-	showForm  bool
-	formInput textinput.Model
+	repo       *db.TasksRepo
+	taskList   list.Model
+	width      int
+	height     int
+	err        string
+	showForm   bool
+	formEditID int64 // 0=new, else edit
+	formInput  textinput.Model
 }
 
 // NewModel creates a new tasks model.
@@ -129,13 +130,29 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		switch msg.String() {
 		case "n":
 			m.showForm = true
+			m.formEditID = 0
 			m.formInput.SetValue("")
 			m.formInput.Focus()
 			return m, textinput.Blink
+		case "enter":
+			// Edit selected task
+			item := m.taskList.SelectedItem()
+			if ti, ok := item.(taskItem); ok {
+				m.showForm = true
+				m.formEditID = ti.task.ID
+				m.formInput.SetValue(ti.task.Title)
+				m.formInput.Focus()
+				return m, textinput.Blink
+			}
+			return m, nil
 		case "d":
 			return m.handleDelete()
-		case " ", "enter":
+		case " ":
 			return m.handleToggle()
+		case "ctrl+up":
+			return m.handleMoveUp()
+		case "ctrl+down":
+			return m.handleMoveDown()
 		case "j", "down":
 			var cmd tea.Cmd
 			m.taskList, cmd = m.taskList.Update(msg)
@@ -163,16 +180,30 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.showForm = false
 		m.formInput.Blur()
 		return m, nil
-	case "enter":
+	case "enter", "f2":
 		val := strings.TrimSpace(m.formInput.Value())
 		if val != "" {
-			t := &db.Task{Title: val}
-			if err := m.repo.Create(t); err != nil {
-				m.err = err.Error()
+			if m.formEditID != 0 {
+				t, _ := m.repo.Get(m.formEditID)
+				if t != nil {
+					t.Title = val
+					if err := m.repo.Update(t); err != nil {
+						m.err = err.Error()
+					} else {
+						m.showForm = false
+						m.formInput.Blur()
+						m.err = ""
+					}
+				}
 			} else {
-				m.showForm = false
-				m.formInput.Blur()
-				m.err = ""
+				t := &db.Task{Title: val}
+				if err := m.repo.Create(t); err != nil {
+					m.err = err.Error()
+				} else {
+					m.showForm = false
+					m.formInput.Blur()
+					m.err = ""
+				}
 			}
 			m.refreshList(nil)
 			return m, m.loadTasks
@@ -183,6 +214,42 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.formInput, cmd = m.formInput.Update(msg)
 		return m, cmd
 	}
+}
+
+func (m Model) handleMoveUp() (Model, tea.Cmd) {
+	item := m.taskList.SelectedItem()
+	if item == nil {
+		return m, nil
+	}
+	ti, ok := item.(taskItem)
+	if !ok {
+		return m, nil
+	}
+	if err := m.repo.MoveUp(ti.task.ID); err != nil {
+		m.err = err.Error()
+	} else {
+		m.err = ""
+	}
+	m.refreshList(nil)
+	return m, m.loadTasks
+}
+
+func (m Model) handleMoveDown() (Model, tea.Cmd) {
+	item := m.taskList.SelectedItem()
+	if item == nil {
+		return m, nil
+	}
+	ti, ok := item.(taskItem)
+	if !ok {
+		return m, nil
+	}
+	if err := m.repo.MoveDown(ti.task.ID); err != nil {
+		m.err = err.Error()
+	} else {
+		m.err = ""
+	}
+	m.refreshList(nil)
+	return m, m.loadTasks
 }
 
 func (m Model) handleDelete() (Model, tea.Cmd) {
@@ -252,15 +319,19 @@ func (m Model) View() string {
 	}
 
 	if m.showForm {
-		b.WriteString(titleStyle.Render(" New Task ") + "\n\n")
+		title := " New Task "
+		if m.formEditID != 0 {
+			title = " Edit Task "
+		}
+		b.WriteString(titleStyle.Render(title) + "\n\n")
 		b.WriteString("Title: " + m.formInput.View() + "\n")
-		b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("Enter: save  Esc: cancel"))
+		b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("Enter or F2: save  Esc: cancel"))
 		return b.String()
 	}
 
 	b.WriteString(titleStyle.Render(" Tasks ") + "\n\n")
 	b.WriteString(m.taskList.View())
-	b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(" n new  space/enter toggle  d delete  j/k select "))
+	b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(" n new  Enter edit  space toggle  Ctrl+↑/↓ reorder  d delete  j/k select "))
 
 	return b.String()
 }

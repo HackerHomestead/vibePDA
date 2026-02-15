@@ -7,12 +7,29 @@ import (
 )
 
 const schema = `
+CREATE TABLE IF NOT EXISTS notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    content TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     done INTEGER DEFAULT 0,
     due_date DATE,
     priority INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS contacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    notes TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -26,6 +43,14 @@ CREATE TABLE IF NOT EXISTS calendar_events (
     location TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS event_attendees (
+    event_id INTEGER NOT NULL,
+    contact_id INTEGER NOT NULL,
+    PRIMARY KEY (event_id, contact_id),
+    FOREIGN KEY (event_id) REFERENCES calendar_events(id) ON DELETE CASCADE,
+    FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
 );
 `
 

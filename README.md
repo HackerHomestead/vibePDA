@@ -1,4 +1,4 @@
-# Vibe
+# vibePDA
 
 **A terminal personal data assistant** — Notes, Tasks, Contacts, and Calendar in a single TUI, inspired by classic Outlook.
 
@@ -21,10 +21,11 @@ Outlook-style layout: folder sidebar on the left, main content on the right. No 
 
 ## Requirements
 
-- **Go 1.21+** — Many Linux distros ship older Go. Install latest via:
+- **Go 1.21+** — Many Linux distros ship older Go. Install Go 1.23 via:
   ```bash
-  sudo snap install go --classic
+  ./scripts/install-go.sh
   ```
+  Then add to `~/.bashrc`: `export PATH=/usr/local/go/bin:$PATH`
 - **Linux** (primary target: Ubuntu)
 
 ---
@@ -36,15 +37,14 @@ Outlook-style layout: folder sidebar on the left, main content on the right. No 
 ```bash
 git clone <repo-url>
 cd vibe
-go mod tidy
-go build -ldflags "-X github.com/you/vibe/internal/app.BuildNumber=$(date +%s)" -o vibe ./cmd/vibe
+make build
 ./vibe
 ```
 
-Or use the Makefile:
+Or manually:
 
 ```bash
-make build
+go build -ldflags "-X github.com/you/vibe/internal/app.BuildNumber=$(cat VERSION 2>/dev/null | tr -d '\n' || echo dev)" -o vibe ./cmd/vibe
 ./vibe
 ```
 
@@ -79,16 +79,44 @@ cp vibe ~/bin/
 | `d`        | Delete selected event                     |
 | `j` / `k`  | Move event selection                      |
 
-**Event form:** Title → Start (HH:MM) → End (HH:MM) → Notes (multiline). **Tab** / **Enter** next field, **Shift+Tab** previous, **Esc** cancel. Notes supports multiline input.
+**Event form:** Title → Start (HH:MM) → End (HH:MM) → Notes → Attendees (optional). **Enter** next field, **Ctrl+Tab** Notes→Attendees, **Tab** in Notes = indent. **Ctrl+S** or **Ctrl+Enter** save, **Esc** cancel.
 
 ### Tasks (Tab to focus main, then)
 
-| Key       | Action                |
-|-----------|-----------------------|
-| `n`       | New task              |
-| `space` / `Enter` | Toggle done        |
-| `d`       | Delete selected task  |
-| `j` / `k` | Move selection        |
+| Key       | Action                       |
+|-----------|------------------------------|
+| `n`       | New task                     |
+| `Enter`   | Edit selected task           |
+| `space`   | Toggle done                  |
+| `Ctrl+↑` / `Ctrl+↓` | Reorder task          |
+| `d`       | Delete selected task         |
+| `j` / `k` | Move selection               |
+
+### Notes (Tab to focus main, then)
+
+| Key             | Action                |
+|-----------------|-----------------------|
+| `n`             | New note              |
+| `Enter`         | Edit selected note    |
+| `Ctrl+S` / `Ctrl+Enter` | Save (in form)        |
+| `Esc`           | Cancel (in form)      |
+| `d`             | Delete selected note  |
+| `j` / `k`       | Move selection        |
+
+First line = title, rest = content. Multiline textarea.
+
+### Contacts (Tab to focus main, then)
+
+| Key             | Action                |
+|-----------------|-----------------------|
+| `n`             | New contact           |
+| `Enter`         | Edit selected contact |
+| `Ctrl+S` / `Ctrl+Enter` | Save (in form)        |
+| `Esc`           | Cancel (in form)      |
+| `d`             | Delete selected contact |
+| `j` / `k`       | Move selection        |
+
+Form: Name → Email → Phone → Notes. Enter next field, Shift+Tab previous.
 
 ---
 
@@ -153,9 +181,10 @@ See [PLAN.md](PLAN.md) for the full architecture, schema, and implementation pha
 
 - [x] TUI shell with Outlook-inspired layout
 - [x] SQLite backend and migrations (calendar_events)
-- [x] Calendar: month grid, event list, add/delete, time input
-- [x] Tasks: list, add/delete, toggle done
-- [ ] CRUD for Notes, Contacts
+- [x] Calendar: month grid, event list, add/edit/delete, time, notes, attendees
+- [x] Tasks: list, add/edit/delete, toggle done, reorder
+- [x] Notes: list, add/edit/delete (first line=title, rest=content)
+- [x] Contacts: list, add/edit/delete (name, email, phone, notes)
 - [ ] External editor integration, themes
 
 ---

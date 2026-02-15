@@ -105,6 +105,52 @@ func (r *TasksRepo) Delete(id int64) error {
 	return err
 }
 
+// MoveUp swaps priority with the task above in the list.
+func (r *TasksRepo) MoveUp(id int64) error {
+	tasks, err := r.List()
+	if err != nil || len(tasks) < 2 {
+		return err
+	}
+	var idx int = -1
+	for i, t := range tasks {
+		if t.ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx <= 0 {
+		return nil
+	}
+	above := tasks[idx-1]
+	task := tasks[idx]
+	task.Priority, above.Priority = above.Priority, task.Priority
+	_ = r.Update(&task)
+	return r.Update(&above)
+}
+
+// MoveDown swaps priority with the task below in the list.
+func (r *TasksRepo) MoveDown(id int64) error {
+	tasks, err := r.List()
+	if err != nil || len(tasks) < 2 {
+		return err
+	}
+	var idx int = -1
+	for i, t := range tasks {
+		if t.ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 || idx >= len(tasks)-1 {
+		return nil
+	}
+	below := tasks[idx+1]
+	task := tasks[idx]
+	task.Priority, below.Priority = below.Priority, task.Priority
+	_ = r.Update(&task)
+	return r.Update(&below)
+}
+
 func scanTasks(rows *sql.Rows) ([]Task, error) {
 	var tasks []Task
 	for rows.Next() {

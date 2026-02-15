@@ -76,6 +76,7 @@ var (
 			Padding(0, 1)
 	attendeeCardNameStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(ui.ColorTitleFg))
 	attendeeCardLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(ui.ColorTextDim))
+	emptyStateStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color(ui.ColorTextDim))
 )
 
 // Form steps: 0=title, 1=date, 2=start, 3=end, 4=all-day, 5=notes, 6=attendees
@@ -972,7 +973,11 @@ func (m Model) View() string {
 		dayLabel = fmt.Sprintf("Events on %s %d", m.month, m.day)
 	}
 	b.WriteString(titleStyle.Render(" "+dayLabel+" ") + "\n")
-	b.WriteString(m.eventList.View())
+	if len(m.eventList.Items()) == 0 {
+		b.WriteString(emptyStateStyle.Render("No events.") + "\n")
+	} else {
+		b.WriteString(m.eventList.View())
+	}
 
 	return b.String()
 }

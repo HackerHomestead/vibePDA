@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.7.1] - 2026-02-15
+
+### Added
+
+- **build-package**: Make target produces a redistributable `dist/vibePDA-<version>.tar.gz` with the binary and all documentation. `make all` (or `make`) now runs build-package.
+- **ASCII .txt for all markdown**: Every markdown doc (README, CHANGELOG, PLAN, docs/TESTING, demo/README) has an equivalent `.txt` plain-text file. `make docs-txt` regenerates them from the `.md` sources via `scripts/md2txt.go`. The redistributable package includes both formats.
+
+### Fixed
+
+- **Calendar empty state**: When there are no events for the selected day, the calendar now shows "No events." in app styling instead of the list default ("No items." with a blue title bar).
+
+---
+
 ## [0.7.0] - 2026-02-15
 
 ### Added

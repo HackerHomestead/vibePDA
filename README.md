@@ -56,6 +56,16 @@ Optionally install to `~/bin` or `/usr/local/bin`:
 cp vibePDA ~/bin/
 ```
 
+### Redistributable package
+
+Create a versioned tarball with the binary and documentation:
+
+```bash
+make build-package
+```
+
+This produces `dist/vibePDA-<version>.tar.gz` containing the `vibePDA` binary, `README.md`/`README.txt`, `CHANGELOG.md`/`CHANGELOG.txt`, `PLAN.md`/`PLAN.txt`, `VERSION`, `docs/` (with `TESTING.md`/`TESTING.txt`), and `demo/README.md`/`demo/README.txt`. Every markdown doc has an ASCII `.txt` equivalent; run `make docs-txt` to regenerate them.
+
 ### Demo data
 
 Build and seed with 100+ Parks and Rec–themed records per module (data in `demo/`):
@@ -162,7 +172,10 @@ vibe/
 │   ├── toast/             # Transient notifications for CRUD feedback
 │   ├── trash/             # Trashcan view (soft-deleted items)
 │   └── ui/                # Shared styles, pretty-time helpers
-├── Makefile               # build, build-demo, clean, test
+├── Makefile               # build, build-package, build-demo, docs-txt, clean, test
+├── scripts/
+│   ├── install-go.sh      # Install Go 1.24.2+
+│   └── md2txt.go          # Generate .txt ASCII from .md (make docs-txt)
 ├── go.mod
 ├── PLAN.md                # Architecture and roadmap
 └── README.md
@@ -193,6 +206,7 @@ See [PLAN.md](PLAN.md) for the full architecture, schema, and implementation pha
 - [x] Trash: soft-delete, restore
 - [x] Tasks: search, filter, sort, pretty date
 - [x] Demo: `make build-demo`, `VIBE_DB=./vibe-demo.db ./vibePDA`
+- [x] Redistributable package: `make build-package` (or `make all`); ASCII `.txt` for all markdown docs
 - [ ] External editor integration, themes
 
 ---

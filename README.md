@@ -104,7 +104,7 @@ Run a single CRUD operation and exit (no TUI):
 - **tasks** — `add <title> [due_date] [priority]` | `list` | `show <id>` | `delete <id>`
 - **contacts** — `add <name> [email] [phone]` | `list` | `delete <id>`
 - **calendar** — `add <title> [start] [end] [all_day]` | `list` | `delete <id>`
-- **trash** — `list` | `restore <type> <id>` (type: note, task, contact, event, fact)
+- **trash** — `list` | `restore <type> <id>` (type: note, task, contact, event, fact, finance, document)
 - **facts** — `add <key> <value>` | `list` | `show <id>` | `edit <id> <key> <value>` | `delete <id>`
 
 Example: `./vibePDA notes add "My title" "Content"` prints the new note id; `./vibePDA notes list` prints id, title, content.
@@ -115,7 +115,7 @@ Like a classic GW-BASIC session: prompt, type commands, see output, scroll back.
 
 ```bash
 ./vibePDA -cmd
-vibePDA 0.9.1-alpha — interactive command mode (type 'help' or 'quit')
+vibePDA 0.9.2-alpha — interactive command mode (type 'help' or 'quit')
 vibe> notes list
 1	My note	Content
 vibe> tasks add "Todo"
@@ -165,6 +165,7 @@ make install
 - **PLAN.md**: Technical architecture and design notes
 - **docs/TESTING.md**: Testing documentation
 - **docs/CODE_REVIEW.md**: Senior developer code review and recommendations
+- **docs/INFOSEC_REVIEW.md**: Security review and fixes (length cap, strcpy→snprintf)
 - **assets/**: Project icon (`icon.svg`, `icon.png`). Regenerate PNG: `convert -background none -density 256 assets/icon.svg -resize 256x256 assets/icon.png`
 - **docs/images/**: Screenshots and animated demo (`scripts/gen_screenshots.py` to regenerate)
 
@@ -176,7 +177,7 @@ make test
 make && ./run_tests
 ```
 
-Runs unit tests for app (UI state / key handling), storage (backend), and trash integration tests.
+Runs unit tests for app (UI state / key handling), storage (backend), trash integration, migration, corruption, fuzz/sanity, and security regression tests. See `docs/TESTING.md`.
 
 ---
 
@@ -205,12 +206,13 @@ vibe/
 │   ├── types.h             # Data types (Note, Task, Contact, Event)
 │   ├── storage.h           # Storage API
 │   └── storage_file.c      # File-based backend (all platforms)
-├── tests/              # Unit tests (app + storage)
+├── tests/              # Unit tests (app, storage, fuzz, migration, corruption)
 ├── assets/             # icon.svg, icon.png (project icon)
 ├── scripts/            # gen_screenshots.py (PNG + GIF for docs)
 ├── README.md, CHANGELOG.md, PLAN.md, VERSION
 └── docs/
     ├── CODE_REVIEW.md   # Code review and recommendations
+    ├── INFOSEC_REVIEW.md # Security review and fixes
     ├── TESTING.md
     ├── USER_MANUAL.md
     └── images/          # Screenshots (gen_screenshots.py)

@@ -1,6 +1,6 @@
 # vibePDA User Manual
 
-**Version 0.9.1-alpha**
+**Version 0.9.2-alpha**
 
 A comprehensive guide to using vibePDA, your terminal personal data assistant.
 

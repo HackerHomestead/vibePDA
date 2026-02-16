@@ -68,8 +68,8 @@ All user-facing entities support **soft-delete** (deleted_at). Trash lists items
 | Contacts | Contact list           | Business card view (name, email, phone, notes); New/Edit/Delete; Search (name/email/phone) |
 | Calendar | Events & appointments  | Month grid + event list; New/Edit/Delete; Search (title) |
 | Facts    | Key-value pairs        | Fact list (key = value); New/Edit/Delete; Search (key/value) |
-| Finances | General ledger         | Finance entry list (stub); Search (description/category/account) |
-| Documents | Templated forms        | Document list (stub); Search (title/template/content) |
+| Finances | General ledger         | Finance entry list; Search (description/category/account) |
+| Documents | Templated forms        | Document list; Search (title/template/content) |
 | Trash    | Soft-deleted items     | List deleted items; Restore; Checkbox selection; Permanent delete |
 
 Sidebar lists module names only (no record counters).
@@ -91,11 +91,14 @@ vibe/
 ├── tests/
 │   ├── run_tests.c
 │   ├── test_app.c
-│   └── test_storage.c
+│   ├── test_storage.c
+│   └── test_fuzz.c      # Fuzz/sanity and security regression tests
 ├── Makefile                # TARGET=linux|dos|webasm; all, clean, rebuild, test, install
 ├── config.h.in, configure.ac, Makefile.am
 ├── VERSION, README.md, CHANGELOG.md
 └── docs/
+    ├── CODE_REVIEW.md
+    ├── INFOSEC_REVIEW.md
     └── TESTING.md
 ```
 

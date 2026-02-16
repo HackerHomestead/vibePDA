@@ -8,7 +8,9 @@
 
 #ifndef PLATFORM_WASM
 
-#include <curses.h>
+/* Use ncursesw for proper UTF-8 multi-byte support (box-drawing, etc.).
+ * Regular ncurses treats each byte as a char, causing mojibake. */
+#include <ncursesw/curses.h>
 
 void tui_init(void) {
     initscr();

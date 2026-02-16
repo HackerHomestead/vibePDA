@@ -35,7 +35,7 @@ typedef struct {
     char prompt_buf[PROMPT_BUF_LEN];
     int prompt_len;
     int prompt_step;     /* 0=first field, 1=second, etc. */
-    char prompt_data[4][256];  /* collected field values */
+    char prompt_data[5][256];  /* collected field values (finances uses 5) */
     /* Content editor: bordered multi-line text area for note body */
     int content_edit_mode;
     char content_edit_buf[CONTENT_EDIT_BUF_MAX];
@@ -43,6 +43,7 @@ typedef struct {
     int content_edit_cursor_pos;  /* cursor position in buffer */
     int content_edit_show_line_numbers;  /* 1=show line numbers */
     int content_edit_scroll_offset;  /* line number to start displaying from */
+    int content_edit_field;  /* for contact form: 0=name, 1=email, 2=phone, 3=notes */
     /* Search/Filter mode */
     int search_mode;  /* 1=search active, 0=normal */
     char search_query[256];  /* current search string */

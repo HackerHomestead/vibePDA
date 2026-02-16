@@ -12,33 +12,40 @@
 #include <string.h>
 #include <stdlib.h>
 
-/* Box-drawing characters (Unicode U+2500 block, UTF-8) */
-#define BOX_TL "\xe2\x94\x8c"   /* ┌ U+250C top-left */
-#define BOX_TR "\xe2\x94\x90"   /* ┐ U+2510 top-right */
-#define BOX_BL "\xe2\x94\x94"   /* └ U+2514 bottom-left */
-#define BOX_BR "\xe2\x94\x98"   /* ┘ U+2518 bottom-right */
-#define BOX_H  "\xe2\x94\x80"   /* ─ U+2500 horizontal */
-#define BOX_V  "\xe2\x94\x82"   /* │ U+2502 vertical */
-#define BOX_LT "\xe2\x94\x9c"   /* ├ U+251C left-T */
-#define BOX_RT "\xe2\x94\xa4"   /* ┤ U+2524 right-T */
+/* Box-drawing: Unicode (U+2500) or ASCII fallback for terminals that break (e.g. Mac Terminal).
+ * Set VIBE_ASCII_BOX=1 to force ASCII (+ - |) for compatibility. */
+#include <ctype.h>
+
+static int use_ascii_box = -1;  /* -1=unset, 0=Unicode, 1=ASCII */
+
+static void init_box_style(void) {
+    if (use_ascii_box >= 0) return;
+    const char *e = getenv("VIBE_ASCII_BOX");
+    use_ascii_box = (e && (e[0] == '1' || (e[0] != '0' && tolower((unsigned char)e[0]) == 'y'))) ? 1 : 0;
+}
 
 static void box_top(int row, int col, int w) {
+    init_box_style();
     tui_goto(row, col);
-    tui_putstr(BOX_TL);
-    for (int i = 0; i < w; i++) tui_putstr(BOX_H);
-    tui_putstr(BOX_TR);
+    if (use_ascii_box) { tui_putchar('+'); for (int i = 0; i < w; i++) tui_putchar('-'); tui_putchar('+'); }
+    else { tui_putstr("\xe2\x94\x8c"); for (int i = 0; i < w; i++) tui_putstr("\xe2\x94\x80"); tui_putstr("\xe2\x94\x90"); }
 }
 static void box_sep(int row, int col, int w) {
+    init_box_style();
     tui_goto(row, col);
-    tui_putstr(BOX_LT);
-    for (int i = 0; i < w; i++) tui_putstr(BOX_H);
-    tui_putstr(BOX_RT);
+    if (use_ascii_box) { tui_putchar('|'); for (int i = 0; i < w; i++) tui_putchar('-'); tui_putchar('|'); }
+    else { tui_putstr("\xe2\x94\x9c"); for (int i = 0; i < w; i++) tui_putstr("\xe2\x94\x80"); tui_putstr("\xe2\x94\xa4"); }
 }
 static void box_bottom(int row, int col, int w) {
+    init_box_style();
     tui_goto(row, col);
-    tui_putstr(BOX_BL);
-    for (int i = 0; i < w; i++) tui_putstr(BOX_H);
-    tui_putstr(BOX_BR);
+    if (use_ascii_box) { tui_putchar('+'); for (int i = 0; i < w; i++) tui_putchar('-'); tui_putchar('+'); }
+    else { tui_putstr("\xe2\x94\x94"); for (int i = 0; i < w; i++) tui_putstr("\xe2\x94\x80"); tui_putstr("\xe2\x94\x98"); }
+}
+static void box_v(void) {
+    init_box_style();
+    if (use_ascii_box) tui_putchar('|');
+    else tui_putstr("\xe2\x94\x82");
 }
 static const char *module_names[] = {
     "Notes", "Tasks", "Contacts", "Calendar", "Facts", "Finances", "Documents", "Trash"
@@ -144,6 +151,7 @@ void app_init(AppState *a, int rows, int cols) {
     a->content_edit_cursor_pos = 0;
     a->content_edit_show_line_numbers = 0;
     a->content_edit_scroll_offset = 0;
+    a->content_edit_field = 0;
     a->search_mode = 0;
     a->search_query[0] = '\0';
     a->search_len = 0;
@@ -271,13 +279,13 @@ static void draw_note_card(AppState *a, int main_col, int main_width, int top, i
 
     /* Title row */
     tui_goto(top + 1, box_left);
-    tui_putstr(BOX_V);
+    box_v();
     tui_attr_bold();
     tui_putstr(" Title: ");
     tui_putstr(n->title[0] ? n->title : "(no title)");
     tui_attr_normal();
     for (int i = 8 + (int)strlen(n->title[0] ? n->title : "(no title)"); i < box_width; i++) tui_putchar(' ');
-    tui_putstr(BOX_V);
+    box_v();
 
     /* Separator */
     box_sep(top + 2, box_left, box_width);
@@ -292,7 +300,7 @@ static void draw_note_card(AppState *a, int main_col, int main_width, int top, i
     if (content_width < 1) content_width = 1;
     while (line < max_lines) {
         tui_goto(top + 3 + line, box_left);
-        tui_putstr(BOX_V);
+        box_v();
         int col = 1;
         while (i < (int)strlen(n->content) && col < box_width - 1) {
             char ch = p[i++];
@@ -302,15 +310,15 @@ static void draw_note_card(AppState *a, int main_col, int main_width, int top, i
         }
         if (i < (int)strlen(n->content) && p[i] == '\n') i++;
         for (; col < box_width - 1; col++) tui_putchar(' ');
-        tui_putstr(BOX_V);
+        box_v();
         line++;
         if (i >= (int)strlen(n->content)) break;
     }
     for (; line < max_lines; line++) {
         tui_goto(top + 3 + line, box_left);
-        tui_putstr(BOX_V);
+        box_v();
         for (int c = 1; c < box_width - 1; c++) tui_putchar(' ');
-        tui_putstr(BOX_V);
+        box_v();
     }
 
     /* Bottom border */
@@ -341,6 +349,10 @@ static void draw_task_cb(const VibeTask *t, void *v) {
     c->idx++;
 }
 
+#define CONTACT_CARD_MIN_WIDTH 28
+#define CONTACT_CARD_HEIGHT 8
+#define CONTACT_CARD_GAP 1
+
 static void fetch_contact_at_cb(const VibeContact *c, void *v) {
     ContactFetchCtx *ctx = (ContactFetchCtx *)v;
     if (ctx->idx == ctx->want_idx) {
@@ -350,101 +362,116 @@ static void fetch_contact_at_cb(const VibeContact *c, void *v) {
     ctx->idx++;
 }
 
+/* Draw a single compact contact card at (box_left, top) with given width. */
+static void draw_single_contact_card(const VibeContact *c, int box_left, int top, int box_width, int is_selected) {
+    if (box_width < 10) box_width = 10;
+    int inner = box_width - 2;
+    if (inner < 1) inner = 1;
+    if (is_selected) tui_attr_reverse();
+    box_top(top, box_left, box_width);
+    tui_goto(top + 1, box_left);
+    box_v();
+    tui_attr_bold();
+    const char *name = c->name[0] ? c->name : "(no name)";
+    int name_len = (int)strlen(name);
+    for (int i = 0; i < inner; i++) tui_putchar(i < name_len ? name[i] : ' ');
+    tui_attr_normal();
+    if (is_selected) tui_attr_reverse();
+    box_v();
+    if (is_selected) tui_attr_normal();
+    box_sep(top + 2, box_left, box_width);
+    tui_goto(top + 3, box_left);
+    box_v();
+    if (is_selected) tui_attr_reverse();
+    tui_putstr(" ");
+    const char *email = c->email[0] ? c->email : "-";
+    int email_len = (int)strlen(email);
+    for (int i = 0; i < inner - 1; i++) tui_putchar(i < email_len ? email[i] : ' ');
+    if (is_selected) tui_attr_normal();
+    box_v();
+    tui_goto(top + 4, box_left);
+    box_v();
+    if (is_selected) tui_attr_reverse();
+    tui_putstr(" ");
+    const char *phone = c->phone[0] ? c->phone : "-";
+    int phone_len = (int)strlen(phone);
+    for (int i = 0; i < inner - 1; i++) tui_putchar(i < phone_len ? phone[i] : ' ');
+    if (is_selected) tui_attr_normal();
+    box_v();
+    /* Notes row (truncated, first line only) */
+    tui_goto(top + 5, box_left);
+    box_v();
+    if (is_selected) tui_attr_reverse();
+    tui_putstr(" ");
+    const char *notes = c->notes[0] ? c->notes : "";
+    for (int i = 0; i < inner - 1; i++) {
+        char ch = (i < (int)strlen(notes) && notes[i] != '\n') ? (notes[i] >= 32 ? notes[i] : ' ') : ' ';
+        tui_putchar(ch);
+    }
+    if (is_selected) tui_attr_normal();
+    box_v();
+    box_bottom(top + 6, box_left, box_width);
+}
+
 static void draw_contact_card(AppState *a, int main_col, int main_width, int top, int bottom) {
     const char *filter_query = a->search_query[0] ? a->search_query : NULL;
     int count = get_item_count_with_filter(MODULE_CONTACTS, filter_query);
     if (count == 0) return;
-    ContactFetchCtx ctx = {{0}, 0, 0, a->selected_index};
-    if (filter_query) {
-        storage_contacts_list_filtered(fetch_contact_at_cb, &ctx, filter_query);
-    } else {
-        storage_contacts_list(fetch_contact_at_cb, &ctx);
+
+    int avail_height = bottom - top - 2;  /* leave room for footer */
+    if (avail_height < CONTACT_CARD_HEIGHT) avail_height = CONTACT_CARD_HEIGHT;
+
+    /* Grid layout: how many columns fit? */
+    int num_cols = 1;
+    int card_width = main_width;
+    if (main_width >= (CONTACT_CARD_MIN_WIDTH + CONTACT_CARD_GAP) * 2) {
+        num_cols = (main_width + CONTACT_CARD_GAP) / (CONTACT_CARD_MIN_WIDTH + CONTACT_CARD_GAP);
+        if (num_cols < 1) num_cols = 1;
+        card_width = (main_width - (num_cols - 1) * CONTACT_CARD_GAP) / num_cols;
+        if (card_width < CONTACT_CARD_MIN_WIDTH) {
+            num_cols = main_width / (CONTACT_CARD_MIN_WIDTH + CONTACT_CARD_GAP);
+            if (num_cols < 1) num_cols = 1;
+            card_width = (main_width - (num_cols - 1) * CONTACT_CARD_GAP) / num_cols;
+        }
     }
-    if (!ctx.found) return;
+    int num_rows = avail_height / (CONTACT_CARD_HEIGHT + CONTACT_CARD_GAP);
+    if (num_rows < 1) num_rows = 1;
+    int cards_per_screen = num_cols * num_rows;
 
-    const VibeContact *c = &ctx.contact;
-    int box_width = main_width;
-    int box_left = main_col;
-    if (box_width < 10) box_width = 10;
+    /* Scroll so selected card is visible */
+    int start_index = a->selected_index;
+    if (cards_per_screen < count && a->selected_index >= cards_per_screen) {
+        start_index = a->selected_index - (a->selected_index % num_cols) - (num_rows - 1) * num_cols;
+        if (start_index < 0) start_index = 0;
+    }
+    int end_index = start_index + cards_per_screen;
+    if (end_index > count) end_index = count;
 
-    /* Card top border */
-    box_top(top, box_left, box_width);
-
-    /* Name row (bold, like business card header) */
-    tui_goto(top + 1, box_left);
-    tui_putstr(BOX_V);
-    tui_attr_bold();
-    tui_putstr(" ");
-    tui_putstr(c->name[0] ? c->name : "(no name)");
-    tui_attr_normal();
-    for (int i = 1 + (int)strlen(c->name[0] ? c->name : "(no name)"); i < box_width - 1; i++) tui_putchar(' ');
-    tui_putstr(BOX_V);
-
-    /* Separator */
-    box_sep(top + 2, box_left, box_width);
-
-    /* Email row */
-    tui_goto(top + 3, box_left);
-    tui_putstr(BOX_V);
-    tui_putstr(" Email: ");
-    tui_putstr(c->email[0] ? c->email : "-");
-    for (int i = 7 + (int)strlen(c->email[0] ? c->email : "-"); i < box_width - 1; i++) tui_putchar(' ');
-    tui_putstr(BOX_V);
-
-    /* Phone row */
-    tui_goto(top + 4, box_left);
-    tui_putstr(BOX_V);
-    tui_putstr(" Phone: ");
-    tui_putstr(c->phone[0] ? c->phone : "-");
-    for (int i = 7 + (int)strlen(c->phone[0] ? c->phone : "-"); i < box_width - 1; i++) tui_putchar(' ');
-    tui_putstr(BOX_V);
-
-    /* Notes section (if present) */
-    int row = top + 5;
-    if (c->notes[0]) {
-        box_sep(row, box_left, box_width);
-        row++;
-
-        const char *p = c->notes;
-        int line = 0;
-        int i = 0;
-        int max_lines = bottom - top - 8;
-        if (max_lines < 1) max_lines = 1;
-        int content_width = box_width - 2;
-        if (content_width < 1) content_width = 1;
-        while (line < max_lines) {
-            tui_goto(row + line, box_left);
-            tui_putstr(BOX_V);
-            int col = 1;
-            while (i < (int)strlen(c->notes) && col < box_width - 1) {
-                char ch = p[i++];
-                if (ch == '\n') break;
-                tui_putchar(ch >= 32 && ch < 127 ? ch : ' ');
-                col++;
-            }
-            if (i < (int)strlen(c->notes) && p[i] == '\n') i++;
-            for (; col < box_width - 1; col++) tui_putchar(' ');
-            tui_putstr(BOX_V);
-            line++;
-            if (i >= (int)strlen(c->notes)) break;
+    /* Draw each visible card */
+    for (int i = start_index; i < end_index; i++) {
+        ContactFetchCtx ctx = {{0}, 0, 0, i};
+        if (filter_query) {
+            storage_contacts_list_filtered(fetch_contact_at_cb, &ctx, filter_query);
+        } else {
+            storage_contacts_list(fetch_contact_at_cb, &ctx);
         }
-        for (; line < max_lines; line++) {
-            tui_goto(row + line, box_left);
-            tui_putstr(BOX_V);
-            for (int col = 1; col < box_width - 1; col++) tui_putchar(' ');
-            tui_putstr(BOX_V);
-        }
-        row += max_lines;
+        if (!ctx.found) continue;
+        int grid_idx = i - start_index;
+        int row = grid_idx / num_cols;
+        int col = grid_idx % num_cols;
+        int card_left = main_col + col * (card_width + CONTACT_CARD_GAP);
+        int card_top = top + row * (CONTACT_CARD_HEIGHT + CONTACT_CARD_GAP);
+        int is_selected = (i == a->selected_index && !a->focus_sidebar);
+        draw_single_contact_card(&ctx.contact, card_left, card_top, card_width, is_selected);
     }
 
-    /* Bottom border */
-    box_bottom(row, box_left, box_width);
-
-    /* Card index hint */
-    tui_goto(row + 1, box_left);
-    {
-        char buf[64];
-        snprintf(buf, sizeof(buf), " Contact %d of %d (Up/Down) ", a->selected_index + 1, count);
+    /* Footer: Contact N of M (Up/Down/Left/Right) */
+    int footer_row = top + num_rows * (CONTACT_CARD_HEIGHT + CONTACT_CARD_GAP);
+    if (footer_row < bottom) {
+        tui_goto(footer_row, main_col);
+        char buf[80];
+        const char *nav = (num_cols > 1) ? "Up/Down/Left/Right" : "Up/Down";
+        snprintf(buf, sizeof(buf), " Contact %d of %d (%s) ", a->selected_index + 1, count, nav);
         tui_attr_reverse();
         tui_putstr(buf);
         tui_attr_normal();
@@ -500,8 +527,11 @@ static void draw_document_cb(const VibeDocument *d, void *v) {
     tui_goto(*c->row, c->main_col);
     if (c->idx == c->selected && !c->focus_sidebar) tui_attr_reverse();
     char line[256];
-    snprintf(line, sizeof(line), "%3d  [%s] %.*s", d->id, d->template_name[0] ? d->template_name : "default",
-             c->main_width - 20, d->title[0] ? d->title : "(no title)");
+    int max_title = (int)sizeof(line) - 92;  /* leave room for "%3d  [%.80s] " */
+    if (max_title > c->main_width - 20) max_title = c->main_width - 20;
+    if (max_title < 1) max_title = 1;
+    snprintf(line, sizeof(line), "%3d  [%.80s] %.*s", d->id, d->template_name[0] ? d->template_name : "default",
+             max_title, d->title[0] ? d->title : "(no title)");
     tui_putstr(line);
     if (c->idx == c->selected && !c->focus_sidebar) tui_attr_normal();
     (*c->row)++;
@@ -809,6 +839,110 @@ static void ensure_cursor_visible(AppState *a, int content_rows) {
     }
 }
 
+#define CONTACT_FORM_TOP    4
+#define CONTACT_FORM_LEFT   2
+#define CONTACT_FORM_HEIGHT 14
+
+/* Contact form editor: Name, Email, Phone, Notes in a box (like notes content editor) */
+static void draw_contact_form_editor(AppState *a) {
+    int box_width = a->cols - CONTACT_FORM_LEFT * 2 - 2;
+    int box_height = CONTACT_FORM_HEIGHT;
+    if (box_width < 20) box_width = 20;
+    if (box_height > a->rows - CONTACT_FORM_TOP - 2) box_height = a->rows - CONTACT_FORM_TOP - 2;
+
+    int inner = box_width - 2;
+    if (inner < 1) inner = 1;
+
+    box_top(CONTACT_FORM_TOP, CONTACT_FORM_LEFT, box_width);
+
+    /* Name row */
+    tui_goto(CONTACT_FORM_TOP + 1, CONTACT_FORM_LEFT);
+    box_v();
+    tui_putstr(" Name:  ");
+    const char *name_val = (a->content_edit_field == 0) ? a->prompt_buf : a->prompt_data[0];
+    int name_len = (int)strlen(name_val);
+    for (int i = 0; i < inner - 7; i++) {
+        if (a->content_edit_field == 0 && i == a->prompt_len) tui_attr_reverse();
+        tui_putchar(i < name_len ? (name_val[i] >= 32 && name_val[i] < 127 ? name_val[i] : ' ') : ' ');
+        if (a->content_edit_field == 0 && i == a->prompt_len) tui_attr_normal();
+    }
+    box_v();
+
+    /* Email row */
+    tui_goto(CONTACT_FORM_TOP + 2, CONTACT_FORM_LEFT);
+    box_v();
+    tui_putstr(" Email: ");
+    const char *email_val = (a->content_edit_field == 1) ? a->prompt_buf : a->prompt_data[1];
+    int email_len = (int)strlen(email_val);
+    for (int i = 0; i < inner - 7; i++) {
+        if (a->content_edit_field == 1 && i == a->prompt_len) tui_attr_reverse();
+        tui_putchar(i < email_len ? (email_val[i] >= 32 && email_val[i] < 127 ? email_val[i] : ' ') : ' ');
+        if (a->content_edit_field == 1 && i == a->prompt_len) tui_attr_normal();
+    }
+    box_v();
+
+    /* Phone row */
+    tui_goto(CONTACT_FORM_TOP + 3, CONTACT_FORM_LEFT);
+    box_v();
+    tui_putstr(" Phone: ");
+    const char *phone_val = (a->content_edit_field == 2) ? a->prompt_buf : a->prompt_data[2];
+    int phone_len = (int)strlen(phone_val);
+    for (int i = 0; i < inner - 7; i++) {
+        if (a->content_edit_field == 2 && i == a->prompt_len) tui_attr_reverse();
+        tui_putchar(i < phone_len ? (phone_val[i] >= 32 && phone_val[i] < 127 ? phone_val[i] : ' ') : ' ');
+        if (a->content_edit_field == 2 && i == a->prompt_len) tui_attr_normal();
+    }
+    box_v();
+
+    box_sep(CONTACT_FORM_TOP + 4, CONTACT_FORM_LEFT, box_width);
+
+    /* Notes content area */
+    const char *p = a->content_edit_buf;
+    int content_rows = box_height - 7;
+    if (content_rows < 1) content_rows = 1;
+    ensure_cursor_visible(a, content_rows);
+    int scroll_line = a->content_edit_scroll_offset;
+    int i = 0, current_line = 0;
+    while (current_line < scroll_line && i < a->content_edit_len) {
+        if (p[i] == '\n') current_line++;
+        i++;
+    }
+    int line = 0;
+    while (line < content_rows) {
+        tui_goto(CONTACT_FORM_TOP + 5 + line, CONTACT_FORM_LEFT);
+        box_v();
+        tui_putstr(" ");
+        int col = 0;
+        while (i < a->content_edit_len && col < inner - 1) {
+            if (a->content_edit_field == 3 && i == a->content_edit_cursor_pos) tui_attr_reverse();
+            char ch = p[i];
+            if (ch == '\n') { i++; break; }
+            tui_putchar(ch >= 32 && ch < 127 ? ch : ' ');
+            if (a->content_edit_field == 3 && i == a->content_edit_cursor_pos) tui_attr_normal();
+            col++; i++;
+        }
+        if (a->content_edit_field == 3 && i == a->content_edit_cursor_pos && col < inner - 1) tui_attr_reverse();
+        for (; col < inner - 1; col++) tui_putchar(' ');
+        if (a->content_edit_field == 3 && i == a->content_edit_cursor_pos) tui_attr_normal();
+        box_v();
+        line++;
+        if (i >= a->content_edit_len) break;
+    }
+    for (; line < content_rows; line++) {
+        tui_goto(CONTACT_FORM_TOP + 5 + line, CONTACT_FORM_LEFT);
+        box_v();
+        for (int c = 0; c < inner; c++) tui_putchar(' ');
+        box_v();
+    }
+
+    box_bottom(CONTACT_FORM_TOP + 5 + content_rows, CONTACT_FORM_LEFT, box_width);
+
+    tui_goto(CONTACT_FORM_TOP + 6 + content_rows, CONTACT_FORM_LEFT);
+    tui_attr_reverse();
+    tui_putstr(" Tab=Next  Enter+Enter=Save  Esc=Cancel ");
+    tui_attr_normal();
+}
+
 static void draw_content_editor(AppState *a) {
     int box_width = a->cols - CONTENT_BOX_LEFT * 2 - 2;
     int box_height = CONTENT_BOX_HEIGHT;
@@ -824,11 +958,11 @@ static void draw_content_editor(AppState *a) {
 
     /* Title row */
     tui_goto(CONTENT_BOX_TOP + 1, CONTENT_BOX_LEFT);
-    tui_putstr(BOX_V);
+    box_v();
     tui_putstr(" Title: ");
     tui_putstr(a->prompt_data[0][0] ? a->prompt_data[0] : "(no title)");
     for (int i = 8 + (int)strlen(a->prompt_data[0][0] ? a->prompt_data[0] : "(no title)"); i < box_width; i++) tui_putchar(' ');
-    tui_putstr(BOX_V);
+    box_v();
 
     /* Separator */
     box_sep(CONTENT_BOX_TOP + 2, CONTENT_BOX_LEFT, box_width);
@@ -861,7 +995,7 @@ static void draw_content_editor(AppState *a) {
     
     while (line < content_rows) {
         tui_goto(CONTENT_BOX_TOP + 3 + line, CONTENT_BOX_LEFT);
-        tui_putstr(BOX_V);
+        box_v();
         
         /* Line number */
         if (a->content_edit_show_line_numbers) {
@@ -897,7 +1031,7 @@ static void draw_content_editor(AppState *a) {
             }
             tui_putchar(' ');
         }
-        tui_putstr(BOX_V);
+        box_v();
         line++;
         line_num++;
         if (i >= a->content_edit_len) {
@@ -911,14 +1045,14 @@ static void draw_content_editor(AppState *a) {
     }
     for (; line < content_rows; line++) {
         tui_goto(CONTENT_BOX_TOP + 3 + line, CONTENT_BOX_LEFT);
-        tui_putstr(BOX_V);
+        box_v();
         if (a->content_edit_show_line_numbers) {
             char num_buf[16];
             int n = snprintf(num_buf, sizeof(num_buf), "%4d ", line_num + 1);
             if (n > 0 && n < (int)sizeof(num_buf)) tui_putstr(num_buf);
         }
         for (int c = 0; c < text_width; c++) tui_putchar(' ');
-        tui_putstr(BOX_V);
+        box_v();
         line_num++;
     }
     
@@ -951,6 +1085,7 @@ static const char *help_text[] = {
     "",
     "NAVIGATION",
     "  Up/Down, j/k   Move selection",
+    "  Left/Right     Move in grid (Contacts)",
     "  Tab            Switch between sidebar and list",
     "  Enter          Edit selected item",
     "",
@@ -964,6 +1099,9 @@ static const char *help_text[] = {
     "",
     "NOTE CONTENT",
     "  Multi-line editor: Enter=Newline, Enter+Enter=Save, Esc=Cancel",
+    "",
+    "CONTACT FORM",
+    "  Tab/Enter=Next field  Enter+Enter in Notes=Save  Esc=Cancel",
     "",
     "MODULES",
     "  Notes, Tasks, Contacts, Calendar, Facts, Trash",
@@ -1035,28 +1173,50 @@ static void find_document_cb(const VibeDocument *d, void *v) {
 }
 
 static int get_selected_id(const AppState *a) {
-    int count = get_item_count(a->current_module);
+    const char *fq = a->search_query[0] ? a->search_query : NULL;
+    int count = get_item_count_with_filter(a->current_module, fq);
     if (a->selected_index < 0 || a->selected_index >= count) return 0;
     FindCtx ctx = {0, 0, 0, a->selected_index};
-    if (a->current_module == MODULE_NOTES)
-        storage_notes_list(find_note_cb, &ctx);
-    else if (a->current_module == MODULE_TASKS)
-        storage_tasks_list(find_task_cb, &ctx);
-    else if (a->current_module == MODULE_CONTACTS)
-        storage_contacts_list(find_contact_cb, &ctx);
-    else if (a->current_module == MODULE_CALENDAR)
-        storage_events_list(find_event_cb, &ctx);
-    else if (a->current_module == MODULE_FACTS)
-        storage_facts_list(find_fact_cb, &ctx);
-    else if (a->current_module == MODULE_FINANCES)
-        storage_finances_list(find_finance_cb, &ctx);
-    else if (a->current_module == MODULE_DOCUMENTS)
-        storage_documents_list(find_document_cb, &ctx);
+    if (a->current_module == MODULE_NOTES) {
+        if (fq) storage_notes_list_filtered(find_note_cb, &ctx, fq);
+        else storage_notes_list(find_note_cb, &ctx);
+    } else if (a->current_module == MODULE_TASKS) {
+        if (fq) storage_tasks_list_filtered(find_task_cb, &ctx, fq);
+        else storage_tasks_list(find_task_cb, &ctx);
+    } else if (a->current_module == MODULE_CONTACTS) {
+        if (fq) storage_contacts_list_filtered(find_contact_cb, &ctx, fq);
+        else storage_contacts_list(find_contact_cb, &ctx);
+    } else if (a->current_module == MODULE_CALENDAR) {
+        if (fq) storage_events_list_filtered(find_event_cb, &ctx, fq);
+        else storage_events_list(find_event_cb, &ctx);
+    } else if (a->current_module == MODULE_FACTS) {
+        if (fq) storage_facts_list_filtered(find_fact_cb, &ctx, fq);
+        else storage_facts_list(find_fact_cb, &ctx);
+    } else if (a->current_module == MODULE_FINANCES) {
+        if (fq) storage_finances_list_filtered(find_finance_cb, &ctx, fq);
+        else storage_finances_list(find_finance_cb, &ctx);
+    } else if (a->current_module == MODULE_DOCUMENTS) {
+        if (fq) storage_documents_list_filtered(find_document_cb, &ctx, fq);
+        else storage_documents_list(find_document_cb, &ctx);
+    }
     return ctx.found ? ctx.id : 0;
 }
 
 static int start_new_prompt(AppState *a) {
     if (a->current_module == MODULE_TRASH) return 0;
+    if (a->current_module == MODULE_CONTACTS) {
+        a->content_edit_mode = 1;
+        a->prompt_is_edit = 0;
+        a->content_edit_field = 0;
+        memset(a->prompt_data, 0, sizeof(a->prompt_data));
+        a->prompt_buf[0] = '\0';
+        a->prompt_len = 0;
+        a->content_edit_buf[0] = '\0';
+        a->content_edit_len = 0;
+        a->content_edit_cursor_pos = 0;
+        a->content_edit_scroll_offset = 0;
+        return 1;
+    }
     a->prompt_mode = 1;
     a->prompt_is_edit = 0;
     a->prompt_step = 0;
@@ -1066,7 +1226,7 @@ static int start_new_prompt(AppState *a) {
     switch (a->current_module) {
         case MODULE_NOTES:    snprintf(a->prompt_label, sizeof(a->prompt_label), " Title: "); break;
         case MODULE_TASKS:    snprintf(a->prompt_label, sizeof(a->prompt_label), " Title: "); break;
-        case MODULE_CONTACTS: snprintf(a->prompt_label, sizeof(a->prompt_label), " Name: "); break;
+        case MODULE_CONTACTS: /* handled above */ break;
         case MODULE_CALENDAR: snprintf(a->prompt_label, sizeof(a->prompt_label), " Title: "); break;
         case MODULE_FACTS:    snprintf(a->prompt_label, sizeof(a->prompt_label), " Key: "); break;
         case MODULE_FINANCES: snprintf(a->prompt_label, sizeof(a->prompt_label), " Date (YYYY-MM-DD): "); break;
@@ -1118,20 +1278,7 @@ static void finish_new_step(AppState *a) {
         return;
     }
     if (a->current_module == MODULE_CONTACTS) {
-        if (a->prompt_step == 0) {
-            a->prompt_step = 1;
-            snprintf(a->prompt_label, sizeof(a->prompt_label), " Email: ");
-            return;
-        }
-        if (a->prompt_step == 1) {
-            a->prompt_step = 2;
-            snprintf(a->prompt_label, sizeof(a->prompt_label), " Phone: ");
-            return;
-        }
-        int id = storage_contacts_add(a->prompt_data[0], a->prompt_data[1], a->prompt_data[2]);
-        a->prompt_mode = 0;
-        snprintf(a->message, sizeof(a->message), "Contact %d added.", id);
-        a->selected_index = get_item_count(MODULE_CONTACTS) - 1;
+        /* Contact add uses content_edit_mode form */
         return;
     }
     if (a->current_module == MODULE_CALENDAR) {
@@ -1241,7 +1388,7 @@ static int start_edit_prompt(AppState *a) {
         snprintf(a->prompt_label, sizeof(a->prompt_label), " Title: ");
         snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", t.title);
         a->prompt_len = (int)strlen(a->prompt_buf);
-        snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%s", t.due_date);
+        snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%.255s", t.due_date);
         snprintf(a->prompt_data[2], sizeof(a->prompt_data[2]), "%d", t.priority);
         snprintf(a->prompt_data[3], sizeof(a->prompt_data[3]), "%d", t.done); /* Store done status */
         return 1;
@@ -1249,13 +1396,18 @@ static int start_edit_prompt(AppState *a) {
     if (a->current_module == MODULE_CONTACTS) {
         VibeContact c;
         if (!storage_contact_get(id, &c)) return 0;
-        a->prompt_mode = 1;
-        a->prompt_step = 0;
-        snprintf(a->prompt_label, sizeof(a->prompt_label), " Name: ");
+        a->content_edit_mode = 1;
+        a->prompt_is_edit = 1;
+        a->content_edit_field = 0;
+        snprintf(a->prompt_data[0], sizeof(a->prompt_data[0]), "%.255s", c.name);
+        snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%.255s", c.email);
+        snprintf(a->prompt_data[2], sizeof(a->prompt_data[2]), "%.255s", c.phone);
         snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", c.name);
-        a->prompt_len = (int)strlen(a->prompt_buf);
-        snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%s", c.email);
-        snprintf(a->prompt_data[2], sizeof(a->prompt_data[2]), "%s", c.phone);
+        a->prompt_len = (int)strlen(c.name);
+        snprintf(a->content_edit_buf, sizeof(a->content_edit_buf), "%.4095s", c.notes);
+        a->content_edit_len = (int)strlen(a->content_edit_buf);
+        a->content_edit_cursor_pos = a->content_edit_len;
+        a->content_edit_scroll_offset = 0;
         return 1;
     }
     if (a->current_module == MODULE_CALENDAR) {
@@ -1266,8 +1418,8 @@ static int start_edit_prompt(AppState *a) {
         snprintf(a->prompt_label, sizeof(a->prompt_label), " Title: ");
         snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", e.title);
         a->prompt_len = (int)strlen(a->prompt_buf);
-        snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%s", e.start_at);
-        snprintf(a->prompt_data[2], sizeof(a->prompt_data[2]), "%s", e.end_at);
+        snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%.255s", e.start_at);
+        snprintf(a->prompt_data[2], sizeof(a->prompt_data[2]), "%.255s", e.end_at);
         return 1;
     }
     if (a->current_module == MODULE_FACTS) {
@@ -1278,7 +1430,7 @@ static int start_edit_prompt(AppState *a) {
         snprintf(a->prompt_label, sizeof(a->prompt_label), " Key: ");
         snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", f.key);
         a->prompt_len = (int)strlen(a->prompt_buf);
-        snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%s", f.value);
+        snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%.255s", f.value);
         return 1;
     }
     if (a->current_module == MODULE_FINANCES) {
@@ -1289,10 +1441,10 @@ static int start_edit_prompt(AppState *a) {
         snprintf(a->prompt_label, sizeof(a->prompt_label), " Date (YYYY-MM-DD): ");
         snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", fe.date);
         a->prompt_len = (int)strlen(a->prompt_buf);
-        snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%s", fe.description);
+        snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%.255s", fe.description);
         snprintf(a->prompt_data[2], sizeof(a->prompt_data[2]), "%.2f", fe.amount);
-        snprintf(a->prompt_data[3], sizeof(a->prompt_data[3]), "%s", fe.category);
-        snprintf(a->prompt_data[4], sizeof(a->prompt_data[4]), "%s", fe.account);
+        snprintf(a->prompt_data[3], sizeof(a->prompt_data[3]), "%.255s", fe.category);
+        snprintf(a->prompt_data[4], sizeof(a->prompt_data[4]), "%.255s", fe.account);
         return 1;
     }
     if (a->current_module == MODULE_DOCUMENTS) {
@@ -1303,7 +1455,7 @@ static int start_edit_prompt(AppState *a) {
         snprintf(a->prompt_label, sizeof(a->prompt_label), " Title: ");
         snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", d.title);
         a->prompt_len = (int)strlen(a->prompt_buf);
-        snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%s", d.template_name);
+        snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%.255s", d.template_name);
         snprintf(a->prompt_data[2], sizeof(a->prompt_data[2]), "%.255s", d.content);
         return 1;
     }
@@ -1372,23 +1524,7 @@ static void finish_edit_step(AppState *a) {
         return;
     }
     if (a->current_module == MODULE_CONTACTS) {
-        if (a->prompt_step == 0) {
-            a->prompt_step = 1;
-            snprintf(a->prompt_label, sizeof(a->prompt_label), " Email: ");
-            snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", a->prompt_data[1]);
-            a->prompt_len = (int)strlen(a->prompt_buf);
-            return;
-        }
-        if (a->prompt_step == 1) {
-            a->prompt_step = 2;
-            snprintf(a->prompt_label, sizeof(a->prompt_label), " Phone: ");
-            snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", a->prompt_data[2]);
-            a->prompt_len = (int)strlen(a->prompt_buf);
-            return;
-        }
-        storage_contacts_update(id, a->prompt_data[0], a->prompt_data[1], a->prompt_data[2]);
-        a->prompt_mode = 0;
-        snprintf(a->message, sizeof(a->message), "Contact updated.");
+        /* Contact edit uses content_edit_mode form */
         return;
     }
     if (a->current_module == MODULE_CALENDAR) {
@@ -1522,6 +1658,197 @@ void app_handle_key(AppState *a, int key) {
     }
 
     if (a->content_edit_mode) {
+        /* Contact form: Name, Email, Phone, Notes in a box */
+        if (a->current_module == MODULE_CONTACTS) {
+            if (key == KEY_ESC) {
+                a->content_edit_mode = 0;
+                a->prompt_mode = 0;
+                a->message[0] = '\0';
+                return;
+            }
+            if (key == KEY_TAB) {
+                /* Save current field, move to next */
+                if (a->content_edit_field <= 2) {
+                    snprintf(a->prompt_data[a->content_edit_field], sizeof(a->prompt_data[0]), "%.255s", a->prompt_buf);
+                    a->content_edit_field++;
+                    if (a->content_edit_field <= 2) {
+                        snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", a->prompt_data[a->content_edit_field]);
+                        a->prompt_len = (int)strlen(a->prompt_buf);
+                    }
+                }
+                return;
+            }
+            if (key == KEY_BACKTAB) {
+                if (a->content_edit_field > 0) {
+                    if (a->content_edit_field <= 2)
+                        snprintf(a->prompt_data[a->content_edit_field], sizeof(a->prompt_data[0]), "%.255s", a->prompt_buf);
+                    a->content_edit_field--;
+                    if (a->content_edit_field <= 2) {
+                        snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", a->prompt_data[a->content_edit_field]);
+                        a->prompt_len = (int)strlen(a->prompt_buf);
+                    }
+                }
+                return;
+            }
+            if (a->content_edit_field <= 2) {
+                /* Single-line field editing */
+                if (key == KEY_ENTER || key == '\n' || key == '\r') {
+                    /* Enter = move to next field (like Tab) */
+                    snprintf(a->prompt_data[a->content_edit_field], sizeof(a->prompt_data[0]), "%.255s", a->prompt_buf);
+                    a->content_edit_field++;
+                    if (a->content_edit_field <= 2) {
+                        snprintf(a->prompt_buf, sizeof(a->prompt_buf), "%s", a->prompt_data[a->content_edit_field]);
+                        a->prompt_len = (int)strlen(a->prompt_buf);
+                    }
+                    return;
+                }
+                if (key == KEY_BACKSPACE || key == 0x08) {
+                    if (a->prompt_len > 0) {
+                        int plen = (int)strlen(a->prompt_buf);
+                        memmove(a->prompt_buf + a->prompt_len - 1, a->prompt_buf + a->prompt_len, plen - a->prompt_len + 1);
+                        a->prompt_len--;
+                    }
+                    return;
+                }
+                if (key == KEY_LEFT && a->prompt_len > 0) { a->prompt_len--; return; }
+                if (key == KEY_RIGHT && a->prompt_len < (int)strlen(a->prompt_buf)) { a->prompt_len++; return; }
+                if (key >= 32 && key < 127 && (int)strlen(a->prompt_buf) < 255) {
+                    int plen = (int)strlen(a->prompt_buf);
+                    memmove(a->prompt_buf + a->prompt_len + 1, a->prompt_buf + a->prompt_len, plen - a->prompt_len + 1);
+                    a->prompt_buf[a->prompt_len++] = (char)key;
+                    a->prompt_buf[a->prompt_len] = '\0';
+                    return;
+                }
+                return;
+            }
+            /* content_edit_field == 3: Notes multiline */
+            if (key == KEY_ENTER || key == '\n' || key == '\r') {
+                int pos = a->content_edit_cursor_pos;
+                if (pos < 0) pos = 0;
+                if (pos > a->content_edit_len) pos = a->content_edit_len;
+                int is_double_enter = (pos > 0 && a->content_edit_buf[pos - 1] == '\n');
+                if (is_double_enter) {
+                    /* Save contact */
+                    int id = get_selected_id(a);
+                    if (a->prompt_is_edit && id) {
+                        storage_contacts_update(id, a->prompt_data[0], a->prompt_data[1], a->prompt_data[2], a->content_edit_buf);
+                        snprintf(a->message, sizeof(a->message), "Contact updated.");
+                    } else {
+                        id = storage_contacts_add(a->prompt_data[0], a->prompt_data[1], a->prompt_data[2], a->content_edit_buf);
+                        snprintf(a->message, sizeof(a->message), "Contact %d added.", id);
+                        a->selected_index = get_item_count(MODULE_CONTACTS) - 1;
+                    }
+                    a->content_edit_mode = 0;
+                    a->prompt_mode = 0;
+                    return;
+                }
+                if (a->content_edit_len < CONTENT_EDIT_BUF_MAX - 1) {
+                    memmove(a->content_edit_buf + pos + 1, a->content_edit_buf + pos, a->content_edit_len - pos);
+                    a->content_edit_buf[pos] = '\n';
+                    a->content_edit_len++;
+                    a->content_edit_buf[a->content_edit_len] = '\0';
+                    a->content_edit_cursor_pos = pos + 1;
+                    int content_rows = CONTACT_FORM_HEIGHT - 7;
+                    if (content_rows < 1) content_rows = 1;
+                    ensure_cursor_visible(a, content_rows);
+                }
+                return;
+            }
+            /* Notes field: content editor keys */
+            {
+                int pos = a->content_edit_cursor_pos;
+                if (pos < 0) pos = 0;
+                if (pos > a->content_edit_len) pos = a->content_edit_len;
+                int content_rows = CONTACT_FORM_HEIGHT - 7;
+                if (content_rows < 1) content_rows = 1;
+#ifdef KEY_PPAGE
+                if (key == KEY_PPAGE) {
+                    a->content_edit_scroll_offset -= content_rows;
+                    if (a->content_edit_scroll_offset < 0) a->content_edit_scroll_offset = 0;
+                    ensure_cursor_visible(a, content_rows);
+                    return;
+                }
+#endif
+#ifdef KEY_NPAGE
+                if (key == KEY_NPAGE) {
+                    a->content_edit_scroll_offset += content_rows;
+                    int max_scroll = count_content_lines(a) - content_rows;
+                    if (max_scroll < 0) max_scroll = 0;
+                    if (a->content_edit_scroll_offset > max_scroll) a->content_edit_scroll_offset = max_scroll;
+                    ensure_cursor_visible(a, content_rows);
+                    return;
+                }
+#endif
+                if (key == KEY_LEFT) { if (pos > 0) a->content_edit_cursor_pos = pos - 1; return; }
+                if (key == KEY_RIGHT) { if (pos < a->content_edit_len) a->content_edit_cursor_pos = pos + 1; return; }
+                if (key == KEY_HOME) {
+                    while (pos > 0 && a->content_edit_buf[pos - 1] != '\n') pos--;
+                    a->content_edit_cursor_pos = pos;
+                    return;
+                }
+                if (key == KEY_END) {
+                    while (pos < a->content_edit_len && a->content_edit_buf[pos] != '\n') pos++;
+                    a->content_edit_cursor_pos = pos;
+                    return;
+                }
+                if (key == KEY_UP) {
+                    int line_start = pos;
+                    while (line_start > 0 && a->content_edit_buf[line_start - 1] != '\n') line_start--;
+                    if (line_start > 0) {
+                        int prev_line_start = line_start - 1;
+                        while (prev_line_start > 0 && a->content_edit_buf[prev_line_start - 1] != '\n') prev_line_start--;
+                        int col = pos - line_start;
+                        int new_pos = prev_line_start + col;
+                        while (new_pos < line_start && new_pos < a->content_edit_len && a->content_edit_buf[new_pos] != '\n') new_pos++;
+                        if (new_pos > line_start) new_pos = line_start;
+                        a->content_edit_cursor_pos = new_pos;
+                    } else {
+                        a->content_edit_cursor_pos = 0;
+                    }
+                    ensure_cursor_visible(a, content_rows);
+                    return;
+                }
+                if (key == KEY_DOWN) {
+                    int line_start = pos;
+                    while (line_start > 0 && a->content_edit_buf[line_start - 1] != '\n') line_start--;
+                    int line_end = pos;
+                    while (line_end < a->content_edit_len && a->content_edit_buf[line_end] != '\n') line_end++;
+                    if (line_end < a->content_edit_len) {
+                        int col = pos - line_start;
+                        int next_line_start = line_end + 1;
+                        int next_line_end = next_line_start;
+                        while (next_line_end < a->content_edit_len && a->content_edit_buf[next_line_end] != '\n') next_line_end++;
+                        int new_pos = next_line_start + col;
+                        if (new_pos > next_line_end) new_pos = next_line_end;
+                        a->content_edit_cursor_pos = new_pos;
+                    } else {
+                        a->content_edit_cursor_pos = a->content_edit_len;
+                    }
+                    ensure_cursor_visible(a, content_rows);
+                    return;
+                }
+                if (key == KEY_BACKSPACE || key == 0x08) {
+                    if (pos > 0) {
+                        memmove(a->content_edit_buf + pos - 1, a->content_edit_buf + pos, a->content_edit_len - pos);
+                        a->content_edit_len--;
+                        a->content_edit_buf[a->content_edit_len] = '\0';
+                        a->content_edit_cursor_pos = pos - 1;
+                        ensure_cursor_visible(a, content_rows);
+                    }
+                    return;
+                }
+                if (key >= 32 && key < 127 && a->content_edit_len < CONTENT_EDIT_BUF_MAX - 1) {
+                    memmove(a->content_edit_buf + pos + 1, a->content_edit_buf + pos, a->content_edit_len - pos);
+                    a->content_edit_buf[pos] = (char)key;
+                    a->content_edit_len++;
+                    a->content_edit_buf[a->content_edit_len] = '\0';
+                    a->content_edit_cursor_pos = pos + 1;
+                    ensure_cursor_visible(a, content_rows);
+                    return;
+                }
+            }
+            return;
+        } else {
         int pos = a->content_edit_cursor_pos;
         if (pos < 0) pos = 0;
         if (pos > a->content_edit_len) pos = a->content_edit_len;
@@ -1755,6 +2082,7 @@ void app_handle_key(AppState *a, int key) {
         }
         return;
     }
+    }
 
     if (a->search_mode) {
         if (key == KEY_ESC) {
@@ -1976,6 +2304,21 @@ void app_handle_key(AppState *a, int key) {
             return;
         }
     } else {
+        /* Contacts: Left/Right move within grid before potentially going to sidebar */
+        if (a->current_module == MODULE_CONTACTS) {
+            const char *fq = a->search_query[0] ? a->search_query : NULL;
+            int count = get_item_count_with_filter(MODULE_CONTACTS, fq);
+            if (key == KEY_LEFT && a->selected_index > 0) {
+                a->selected_index--;
+                a->message[0] = '\0';
+                return;
+            }
+            if (key == KEY_RIGHT && a->selected_index < count - 1) {
+                a->selected_index++;
+                a->message[0] = '\0';
+                return;
+            }
+        }
         if (key == KEY_BACKTAB || (key == KEY_LEFT && a->cols > 0)) {
             a->focus_sidebar = 1;
             a->message[0] = '\0';
@@ -2024,7 +2367,10 @@ void app_draw(AppState *a) {
     draw_title_bar(a);
     draw_menu_bar(a);
     if (a->content_edit_mode) {
-        draw_content_editor(a);
+        if (a->current_module == MODULE_CONTACTS)
+            draw_contact_form_editor(a);
+        else
+            draw_content_editor(a);
         draw_status_bar(a);
     } else {
         draw_sidebar(a);

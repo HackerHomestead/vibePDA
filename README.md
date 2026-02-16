@@ -23,8 +23,8 @@
 | **Contacts** | Contact list (business card view) |
 | **Calendar** | Events and appointments |
 | **Facts** | Key-value pairs (e.g. SSN, passwords) |
-| **Finances** | General ledger (stub) |
-| **Documents** | Templated forms (stub) |
+| **Finances** | General ledger (date, description, amount, category, account) |
+| **Documents** | Templated forms (title, template, content) |
 | **Trash** | Soft-deleted items, restore, permanent delete |
 
 - **1980s-style TUI**: Menu bar (F1–F5, F10), status line. Uses curses (ncurses/PDCurses). Box-drawing characters (┌ ─ ┐ │ ├ ┤ └ ┘) for card borders.
@@ -54,6 +54,8 @@ vibePDA uses **binary file-based storage** — no database. One `.bin` file per 
 | `contacts.bin` | id(4) + name + email + phone + notes + created_at + deleted_at |
 | `events.bin` | id(4) + title + description + start_at + end_at + all_day(4) + created_at + deleted_at |
 | `facts.bin` | id(4) + key + value + created_at + deleted_at |
+| `finances.bin` | id(4) + date + description + amount(8) + category + account + notes + created_at + deleted_at |
+| `documents.bin` | id(4) + title + template_name + content + created_at + deleted_at |
 
 - **Soft delete**: `deleted_at` empty = active; non-empty = in Trash. Delete moves items to Trash.
 - **Permanent delete**: Removes records from the file (cannot be undone).
@@ -68,6 +70,20 @@ vibePDA uses **binary file-based storage** — no database. One `.bin` file per 
 - **Linux 32-bit**: `gcc-multilib`, `libc6-dev-i386`, ncurses for `TARGET=linux-ia32`.
 - **FreeDOS**: DJGPP cross-compiler (`i586-pc-msdosdjgpp-gcc`), **PDCurses** for `TARGET=dos`.
 - **WebAssembly**: Emscripten (`emcc`) for `TARGET=webasm` (produces `vibePDA.js` + `vibePDA.wasm`).
+
+### Terminal compatibility
+
+The TUI uses Unicode box-drawing characters (┌ ─ ┐ │ ├ ┤ └ ┘) for card borders. Some terminals (e.g. Mac Terminal with certain fonts or locales) may display them incorrectly. Use the ASCII fallback:
+
+```bash
+VIBE_ASCII_BOX=1 ./vibePDA
+```
+
+Or add `export VIBE_ASCII_BOX=1` to `~/.bashrc` or `~/.zshrc`. This uses `+`, `-`, and `|` instead.
+
+Run `python3 scripts/terminal_test.py` to test compatibility under different TERM/LANG settings.
+
+**Automatic terminal configuration** — Run `make configure-terminal` or `python3 scripts/configure_terminal.py` to detect your terminal, show Unicode vs ASCII samples, ask what you see, and write settings to `~/.config/vibe/vibe.env`. vibePDA loads this file automatically at startup, so no shell restart is needed.
 
 ---
 

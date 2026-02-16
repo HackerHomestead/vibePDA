@@ -78,8 +78,8 @@ def draw_frame(draw, font, font_bold, lines, start_row=0):
         draw.text((PADDING + BORDER, y), line, font=font, fill=FG)
 
 
-def render_notes_view(module_idx=0):
-    """Render Notes module view."""
+def render_notes_view(module_idx=0, ascii_box=False):
+    """Render Notes module view. ascii_box=True uses +-| instead of Unicode box-drawing."""
     img = create_image(COLS, ROWS)
     draw = ImageDraw.Draw(img)
     font_path = find_mono_font()
@@ -119,12 +119,13 @@ def render_notes_view(module_idx=0):
             draw.text((PADDING + BORDER, y), text, font=font, fill=FG)
 
     # Main content header + note card (box-drawing style, matches actual app)
-    draw.text((MAIN_X, content_top + CELL_H), "Notes (3 items)", font=font_bold, fill=FG)
+    header = "Notes (3 items)" + (" [ASCII]" if ascii_box else "")
+    draw.text((MAIN_X, content_top + CELL_H), header, font=font_bold, fill=FG)
     card_x = MAIN_X
     card_w = img.width - card_x - PADDING - BORDER
     card_top = content_top + 2 * CELL_H
     if card_w > 20:
-        # Box-drawing card: ┌───┐ │ Title │ ├───┤ │ content │ └───┘
+        # Box-drawing card: ┌───┐ / +---+ (Unicode vs ASCII fallback)
         draw.rectangle([(card_x, card_top), (card_x + card_w, card_top + 5 * CELL_H)],
                        outline=FG, fill=(25, 25, 25))
         draw.text((card_x + 8, card_top + 4), " Title: Grocery list", font=font_bold, fill=CARD_TITLE)
@@ -288,9 +289,10 @@ def main():
     print("Generating screenshots...")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Generate PNGs
+    # Generate PNGs (Unicode + ASCII fallback variants for terminal compatibility)
     screens = [
-        ("notes.png", render_notes_view(0), "Notes module"),
+        ("notes.png", render_notes_view(0, ascii_box=False), "Notes module (Unicode)"),
+        ("notes_ascii.png", render_notes_view(0, ascii_box=True), "Notes module (ASCII fallback)"),
         ("tasks.png", render_tasks_view(), "Tasks module"),
         ("help.png", render_help_view(), "Help overlay"),
         ("search.png", render_search_view(), "Search/Filter mode"),

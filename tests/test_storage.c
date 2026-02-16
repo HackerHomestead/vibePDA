@@ -23,16 +23,165 @@ static void test_storage_empty(const char *data_dir) {
 static void remove_test_dir(const char *path) {
 #ifdef PLATFORM_LINUX
     char buf[512];
-    snprintf(buf, sizeof(buf), "%s/notes.bin", path);    (void)unlink(buf);
-    snprintf(buf, sizeof(buf), "%s/tasks.bin", path);    (void)unlink(buf);
+    snprintf(buf, sizeof(buf), "%s/notes.bin", path);     (void)unlink(buf);
+    snprintf(buf, sizeof(buf), "%s/notes.txt", path);     (void)unlink(buf);
+    snprintf(buf, sizeof(buf), "%s/tasks.bin", path);     (void)unlink(buf);
+    snprintf(buf, sizeof(buf), "%s/tasks.txt", path);     (void)unlink(buf);
     snprintf(buf, sizeof(buf), "%s/contacts.bin", path); (void)unlink(buf);
-    snprintf(buf, sizeof(buf), "%s/events.bin", path);   (void)unlink(buf);
+    snprintf(buf, sizeof(buf), "%s/contacts.txt", path); (void)unlink(buf);
+    snprintf(buf, sizeof(buf), "%s/events.bin", path);    (void)unlink(buf);
+    snprintf(buf, sizeof(buf), "%s/events.txt", path);    (void)unlink(buf);
     snprintf(buf, sizeof(buf), "%s/facts.bin", path);    (void)unlink(buf);
+    snprintf(buf, sizeof(buf), "%s/facts.txt", path);    (void)unlink(buf);
+    snprintf(buf, sizeof(buf), "%s/finances.bin", path); (void)unlink(buf);
+    snprintf(buf, sizeof(buf), "%s/documents.bin", path); (void)unlink(buf);
     (void)rmdir(path);
 #else
     (void)path;
 #endif
 }
+
+#ifdef PLATFORM_LINUX
+/* Migration test: create .txt files, run storage_init, verify migration to .bin */
+static void test_migration(const char *data_dir) {
+    char path_txt[512], path_bin[512];
+    FILE *f;
+
+    /* Create notes.txt in TSV format: id\ttitle\tcontent\tcreated_at\tdeleted_at */
+    snprintf(path_txt, sizeof(path_txt), "%s/notes.txt", data_dir);
+    snprintf(path_bin, sizeof(path_bin), "%s/notes.bin", data_dir);
+    (void)unlink(path_bin); /* Ensure .bin does not exist */
+    f = fopen(path_txt, "w");
+    assert(f);
+    fprintf(f, "1\tMigrated Note\tMigrated content\t2026-01-01 12:00:00\t\n");
+    fprintf(f, "2\tSecond Note\tMore content\t2026-01-02 12:00:00\t\n");
+    fclose(f);
+
+    storage_init(data_dir);
+
+    /* Verify .bin exists and .txt was removed */
+    assert(access(path_bin, F_OK) == 0);
+    assert(access(path_txt, F_OK) != 0);
+
+    /* Verify migrated data is readable */
+    assert(storage_notes_count() == 2);
+    {
+        int count = 0;
+        void count_notes(const VibeNote *n, void *ctx) {
+            (void)n;
+            (*(int *)ctx)++;
+        }
+        storage_notes_list(count_notes, &count);
+        assert(count == 2);
+    }
+    {
+        VibeNote n;
+        assert(storage_note_get(1, &n));
+        assert(strcmp(n.title, "Migrated Note") == 0);
+        assert(strcmp(n.content, "Migrated content") == 0);
+        assert(storage_note_get(2, &n));
+        assert(strcmp(n.title, "Second Note") == 0);
+    }
+
+    /* Create facts.txt and verify migration */
+    snprintf(path_txt, sizeof(path_txt), "%s/facts.txt", data_dir);
+    snprintf(path_bin, sizeof(path_bin), "%s/facts.bin", data_dir);
+    (void)unlink(path_bin);
+    f = fopen(path_txt, "w");
+    assert(f);
+    fprintf(f, "1\tmigrated_key\tmigrated_value\t2026-01-01 12:00:00\t\n");
+    fclose(f);
+
+    storage_init(data_dir); /* Re-init to trigger facts migration */
+
+    assert(access(path_bin, F_OK) == 0);
+    assert(access(path_txt, F_OK) != 0);
+    assert(storage_facts_count() == 1);
+    {
+        VibeFact fact;
+        assert(storage_fact_get(1, &fact));
+        assert(strcmp(fact.key, "migrated_key") == 0);
+        assert(strcmp(fact.value, "migrated_value") == 0);
+    }
+}
+
+/* Corruption/edge case tests: empty file, truncated record, malformed data */
+static void test_corruption_and_edge_cases(const char *data_dir) {
+    char path[512];
+    FILE *f;
+
+    /* Empty file: should return 0 count and not crash */
+    snprintf(path, sizeof(path), "%s/notes.bin", data_dir);
+    (void)unlink(path);
+    f = fopen(path, "wb");
+    assert(f);
+    fclose(f);
+
+    storage_init(data_dir);
+    assert(storage_notes_count() == 0);
+    {
+        int count = 0;
+        void count_notes(const VibeNote *n, void *ctx) { (void)n; (*(int *)ctx)++; }
+        storage_notes_list(count_notes, &count);
+        assert(count == 0);
+    }
+
+    /* Truncated record: write only id (4 bytes), no strings - read should stop gracefully */
+    f = fopen(path, "wb");
+    assert(f);
+    { unsigned char id4[] = { 1, 0, 0, 0 }; fwrite(id4, 1, 4, f); }
+    fclose(f);
+
+    storage_init(data_dir);
+    /* Should not crash; count may be 0 (incomplete record skipped) */
+    (void)storage_notes_count();
+    {
+        int count = 0;
+        void count_notes(const VibeNote *n, void *ctx) { (void)n; (*(int *)ctx)++; }
+        storage_notes_list(count_notes, &count);
+        assert(count == 0); /* Incomplete record not yielded */
+    }
+
+    /* Malformed: zero-length string for title (valid), then truncated - should not crash */
+    f = fopen(path, "wb");
+    assert(f);
+    { unsigned char id4[] = { 1, 0, 0, 0 }; fwrite(id4, 1, 4, f); }
+    { unsigned char len0[] = { 0, 0, 0, 0 }; fwrite(len0, 1, 4, f); } /* empty title */
+    { unsigned char len5[] = { 5, 0, 0, 0 }; fwrite(len5, 1, 4, f); }
+    fwrite("hello", 1, 5, f); /* content "hello" */
+    /* Omit created_at, deleted_at - truncated */
+    fclose(f);
+
+    storage_init(data_dir);
+    (void)storage_notes_count(); /* Should not crash */
+    {
+        int count = 0;
+        void count_notes(const VibeNote *n, void *ctx) { (void)n; (*(int *)ctx)++; }
+        storage_notes_list(count_notes, &count);
+        assert(count == 0); /* Incomplete record */
+    }
+
+    /* Valid minimal record: id + empty title + empty content + empty created + empty deleted */
+    f = fopen(path, "wb");
+    assert(f);
+    { unsigned char id4[] = { 1, 0, 0, 0 }; fwrite(id4, 1, 4, f); }
+    { unsigned char len0[] = { 0, 0, 0, 0 }; fwrite(len0, 1, 4, f); }
+    { unsigned char len0b[] = { 0, 0, 0, 0 }; fwrite(len0b, 1, 4, f); }
+    { unsigned char len0c[] = { 0, 0, 0, 0 }; fwrite(len0c, 1, 4, f); }
+    { unsigned char len0d[] = { 0, 0, 0, 0 }; fwrite(len0d, 1, 4, f); }
+    fclose(f);
+
+    storage_init(data_dir);
+    assert(storage_notes_count() == 1);
+    {
+        VibeNote n;
+        assert(storage_note_get(1, &n));
+        assert(n.id == 1);
+        assert(n.title[0] == '\0');
+        assert(n.content[0] == '\0');
+    }
+}
+#endif
 
 void test_storage(void) {
     int want_records = 100;
@@ -53,6 +202,23 @@ void test_storage(void) {
 
     /* Empty storage */
     test_storage_empty(data_dir);
+
+#ifdef PLATFORM_LINUX
+    /* Migration and corruption tests (use separate temp dir) */
+    {
+        char migrate_dir[256];
+        snprintf(migrate_dir, sizeof(migrate_dir), "/tmp/vibe_migrate_XXXXXX");
+        if (mkdtemp(migrate_dir)) {
+            test_migration(migrate_dir);
+            remove_test_dir(migrate_dir);
+        }
+        snprintf(migrate_dir, sizeof(migrate_dir), "/tmp/vibe_corrupt_XXXXXX");
+        if (mkdtemp(migrate_dir)) {
+            test_corruption_and_edge_cases(migrate_dir);
+            remove_test_dir(migrate_dir);
+        }
+    }
+#endif
 
     if (want_records <= 0) {
         if (strcmp(data_dir, ".") != 0)
@@ -100,7 +266,7 @@ void test_storage(void) {
         VibeContact c;
         assert(storage_contact_get(contact_id, &c));
         assert(c.id == contact_id);
-        assert(storage_contacts_update(contact_id, "Updated Name", "new@email.com", "555-9999"));
+        assert(storage_contacts_update(contact_id, "Updated Name", "new@email.com", "555-9999", ""));
         assert(storage_contact_get(contact_id, &c));
         assert(strcmp(c.name, "Updated Name") == 0);
         assert(storage_contacts_delete(contact_id));

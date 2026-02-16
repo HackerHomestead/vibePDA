@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <locale.h>
 #if defined(PLATFORM_LINUX)
 #include <termios.h>
 #include <unistd.h>
@@ -38,7 +39,7 @@ static void print_help(const char *prog) {
     printf("           edit <id> ... | delete <id>\n");
     printf("  facts    add <key> <value> | list | show <id> | edit <id> <key> <value>\n");
     printf("           delete <id>\n");
-    printf("  trash    list | restore <type> <id>   (type: note|task|contact|event|fact)\n\n");
+    printf("  trash    list | restore <type> <id>   (type: note|task|contact|event|fact|finance|document)\n\n");
     printf("  --mode tui             Terminal UI (default):\n");
     printf("                         F1 Help, F2 New, F3 Edit, F4 Delete\n");
     printf("  -cmd, --cmd, --mode command   Interactive command mode (REPL, like GW-BASIC):\n");
@@ -565,7 +566,7 @@ static int run_cli(int argc, char **argv) {
             const char *name = arg_idx + 2 < argc ? argv[arg_idx + 2] : "";
             const char *email = arg_idx + 3 < argc ? argv[arg_idx + 3] : "";
             const char *phone = arg_idx + 4 < argc ? argv[arg_idx + 4] : "";
-            int id = storage_contacts_add(name, email, phone);
+            int id = storage_contacts_add(name, email, phone, "");
             if (id) { printf("%d\n", id); return 0; }
             return 1;
         }
@@ -614,7 +615,8 @@ static int run_cli(int argc, char **argv) {
             void print_trash(int type, int id, const char *title, void *ctx) {
                 (void)ctx;
                 const char *t = (type == 0) ? "note" : (type == 1) ? "task" : (type == 2) ? "contact" :
-                    (type == 3) ? "event" : (type == 4) ? "fact" : "?";
+                    (type == 3) ? "event" : (type == 4) ? "fact" : (type == 5) ? "finance" :
+                    (type == 6) ? "document" : "?";
                 printf("%s\t%d\t%s\n", t, id, title);
             }
             storage_trash_list(print_trash, NULL);
@@ -624,7 +626,8 @@ static int run_cli(int argc, char **argv) {
             const char *tname = argv[arg_idx + 2];
             int type = (strcmp(tname, "note") == 0) ? 0 : (strcmp(tname, "task") == 0) ? 1 :
                 (strcmp(tname, "contact") == 0) ? 2 : (strcmp(tname, "event") == 0) ? 3 :
-                (strcmp(tname, "fact") == 0) ? 4 : -1;
+                (strcmp(tname, "fact") == 0) ? 4 : (strcmp(tname, "finance") == 0) ? 5 :
+                (strcmp(tname, "document") == 0) ? 6 : -1;
             int id = atoi(argv[arg_idx + 3]);
             if (storage_restore(type, id)) { printf("ok\n"); return 0; }
             return 1;
@@ -636,6 +639,22 @@ static int run_cli(int argc, char **argv) {
 #endif
 
 int main(int argc, char **argv) {
+    vibe_config_load_env_file(); /* apply ~/.config/vibe/vibe.env (from configure_terminal.py) */
+
+    /* Set locale so ncursesw handles UTF-8 box-drawing correctly.
+     * Without this, C locale causes multi-byte chars to display as replacement glyphs (~T~B etc).
+     * If LANG is unset or "C", try C.UTF-8 or en_US.UTF-8 so box-drawing works. */
+    if (!setlocale(LC_ALL, "")) {
+        setlocale(LC_ALL, "C.UTF-8");
+        setlocale(LC_ALL, "en_US.UTF-8");
+    } else {
+        const char *cur = setlocale(LC_CTYPE, NULL);
+        if (cur && !strstr(cur, "UTF-8")) {
+            if (!setlocale(LC_ALL, "C.UTF-8"))
+                setlocale(LC_ALL, "en_US.UTF-8");
+        }
+    }
+
     int pr = parse_args(argc, argv);
     if (pr == 1) return 0;
     if (pr == 2) return 1;

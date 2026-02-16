@@ -1,6 +1,6 @@
 # vibePDA User Manual
 
-**Version 0.8.0-alpha**
+**Version 0.9.1-alpha**
 
 A comprehensive guide to using vibePDA, your terminal personal data assistant.
 
@@ -258,23 +258,35 @@ The sidebar shows all available modules:
 
 **Purpose**: General ledger for tracking financial transactions.
 
-**Status**: Stub module (not yet implemented)
+**Features**:
+- Date, description, amount, category, account, notes
+- Search by description, category, or account
+- Full CRUD support
 
-**Planned Features**:
-- Date, description, amount, category, account
-- Transaction tracking
-- Financial reporting
+**Creating a Finance Entry**:
+1. Press **F2** or **N**
+2. Enter date (YYYY-MM-DD), press Enter
+3. Enter description, press Enter
+4. Enter amount (decimal), press Enter
+5. Enter category, press Enter
+6. Enter account, press Enter
+7. Entry is created
 
 ### Documents
 
 **Purpose**: Templated forms for document management.
 
-**Status**: Stub module (not yet implemented)
+**Features**:
+- Title, template name, content
+- Search by title, template, or content
+- Full CRUD support with multi-line content editor
 
-**Planned Features**:
-- Template-based documents
-- Form filling
-- Document storage
+**Creating a Document**:
+1. Press **F2** or **N**
+2. Enter title, press Enter
+3. Enter template name, press Enter
+4. Enter content in the multi-line editor
+5. Press **Enter+Enter** to save
 
 ### Trash
 
@@ -358,8 +370,8 @@ The sidebar shows all available modules:
 | Contacts  | Name, Email, Phone                |
 | Calendar  | Title                             |
 | Facts     | Key, Value                        |
-| Finances  | (Not implemented yet)            |
-| Documents | (Not implemented yet)            |
+| Finances  | Description, Category, Account  |
+| Documents | Title, Template, Content        |
 
 ### Visual Indicators
 

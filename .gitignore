@@ -1,5 +1,6 @@
 # Binary
 /vibePDA
+vibePDA_[0-9]*
 vibePDA.exe
 vibePDA.js
 vibePDA.wasm

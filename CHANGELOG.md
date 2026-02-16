@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.9.2-alpha] - 2026-02-16
+
+### Added
+
+- **Finances module**: Full storage backend for general ledger (date, description, amount, category, account, notes). CRUD, search, trash, restore.
+- **Documents module**: Full storage backend for templated forms (title, template_name, content). CRUD, search, trash, restore, multi-line content editor.
+- **Code review fixes**: Byte order portability (read_u32/write_u32 for all 4-byte integers), C11-compliant static helpers (replaced nested functions), error logging for fopen/mkdir failures, path length validation.
+- **Migration tests**: Unit tests verify .txt to .bin migration for notes and facts (Linux only).
+- **Corruption tests**: Unit tests for empty files, truncated records, malformed data, and minimal valid records (Linux only).
+
+### Changed
+
+- **Storage**: All entity types now use little-endian read_u32/write_u32 for portability. Trash supports finance and document types.
+
+---
+
 ## [0.9.1-alpha] - 2026-02-15
 
 ### Added
@@ -14,13 +30,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Code review**: Senior developer review with documentation, comments, and improvements. See `docs/CODE_REVIEW.md`.
 - **Entity type constants**: Replaced magic numbers in storage layer for maintainability.
 - **Trash CLI**: `trash list` and `trash restore` now support `fact` type; display shows correct type names.
+- **ASCII box fallback**: Set `VIBE_ASCII_BOX=1` (or `y`) to use ASCII (+ - |) instead of Unicode box-drawing for terminals that display UTF-8 incorrectly (e.g. Mac Terminal).
+- **Terminal compatibility test**: `scripts/terminal_test.py` tests vibePDA under different TERM/LANG settings; `--screenshots` generates ASCII vs Unicode screenshot variants.
 
 ### Changed
 
 - **Storage migration**: Migration from .txt to .bin now uses `write_u32()` for consistent little-endian output.
 - **copy_str**: Added null and max<=0 guards for safety.
 - **Documentation**: Enhanced file headers in storage_file.c, storage.h, types.h, main.c, app.c, tui.c, vibe_config.c.
-- **Screenshots**: Fixed layout overlap (sidebar vs main content), added module headers, updated Notes to bordered card format, Tasks to `[x] id title` format.
+- **Screenshots**: Fixed layout overlap (sidebar vs main content), added module headers, updated Notes to bordered card format, Tasks to `[x] id title` format. Added `notes_ascii.png` for ASCII fallback variant.
 - **Box-drawing characters**: Note cards, contact cards, and content editor now use Unicode box-drawing (┌ ─ ┐ │ ├ ┤ └ ┘) instead of ASCII + - | for a classic TUI look.
 
 ---

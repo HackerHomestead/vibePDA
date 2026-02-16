@@ -37,10 +37,10 @@ int storage_tasks_update(int id, const char *title, const char *due_date, int pr
 int storage_tasks_delete(int id);
 
 /* Contacts CRUD */
-int storage_contacts_add(const char *name, const char *email, const char *phone);
+int storage_contacts_add(const char *name, const char *email, const char *phone, const char *notes);
 void storage_contacts_list(void (*cb)(const VibeContact *, void *), void *ctx);
 int storage_contact_get(int id, VibeContact *out);
-int storage_contacts_update(int id, const char *name, const char *email, const char *phone);
+int storage_contacts_update(int id, const char *name, const char *email, const char *phone, const char *notes);
 int storage_contacts_delete(int id);
 
 /* Calendar events CRUD */

@@ -145,7 +145,7 @@ void fixture_seed_parks(const char *data_dir, int n) {
         const char *name = pick(contact_names, (int)COUNT(contact_names), &state);
         const char *email = pick(contact_emails, (int)COUNT(contact_emails), &state);
         const char *phone = pick(contact_phones, (int)COUNT(contact_phones), &state);
-        storage_contacts_add(name, email, phone[0] ? phone : NULL);
+        storage_contacts_add(name, email, phone[0] ? phone : NULL, "");
     }
     for (int i = 0; i < n_events; i++) {
         const char *title = pick(event_titles, (int)COUNT(event_titles), &state);

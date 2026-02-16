@@ -14,6 +14,7 @@ typedef struct {
     int default_module; /* 0=Notes, 1=Tasks, 2=Contacts, 3=Calendar */
 } VibeConfig;
 
+void vibe_config_load_env_file(void); /* load ~/.config/vibe/vibe.env if present */
 void vibe_config_load(VibeConfig *out);
 void vibe_config_default_db_path(char *buf, int size);
 void vibe_config_default_data_dir(char *buf, int size);

@@ -91,7 +91,7 @@ config.h: config.h.in VERSION
 	sed 's/@PACKAGE@/$(PACKAGE)/g;s/@VERSION@/$(VERSION)/g' config.h.in > config.h
 
 run_tests: config.h
-	$(CC) $(CPPFLAGS) -Itests $(CFLAGS) -o run_tests tests/run_tests.c tests/test_app.c tests/test_storage.c tests/test_config.c tests/fixture_parks.c src/app.c src/tui.c src/vibe_config.c src/storage_file.c $(shell pkg-config --exists ncursesw 2>/dev/null && pkg-config --libs ncursesw || echo "-lncursesw -ltinfo")
+	$(CC) $(CPPFLAGS) -Itests $(CFLAGS) -o run_tests tests/run_tests.c tests/test_app.c tests/test_storage.c tests/test_fuzz.c tests/test_config.c tests/fixture_parks.c src/app.c src/tui.c src/vibe_config.c src/storage_file.c $(shell pkg-config --exists ncursesw 2>/dev/null && pkg-config --libs ncursesw || echo "-lncursesw -ltinfo")
 
 test_tui: config.h
 	$(CC) $(CPPFLAGS) -Itests -Isrc $(CFLAGS) -o test_tui tests/test_tui.c src/app.c src/tui.c src/vibe_config.c src/storage_file.c $(shell pkg-config --exists ncursesw 2>/dev/null && pkg-config --libs ncursesw || echo "-lncursesw -ltinfo")

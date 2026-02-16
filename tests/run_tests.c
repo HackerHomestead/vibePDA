@@ -7,6 +7,7 @@ extern void test_app(void);
 extern void test_storage(void);
 extern void test_trash_integration(void);
 extern void test_config(void);
+extern void test_fuzz(void);
 
 int main(void) {
     int failed = 0;
@@ -21,6 +22,9 @@ int main(void) {
     fprintf(stderr, "  OK\n");
     fprintf(stderr, "Running configuration tests...\n");
     test_config();
+    fprintf(stderr, "  OK\n");
+    fprintf(stderr, "Running fuzz/sanity tests...\n");
+    test_fuzz();
     fprintf(stderr, "  OK\n");
     fprintf(stderr, "All tests passed.\n");
     return failed ? EXIT_FAILURE : 0;

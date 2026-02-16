@@ -15,6 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Code review fixes**: Byte order portability (read_u32/write_u32 for all 4-byte integers), C11-compliant static helpers (replaced nested functions), error logging for fopen/mkdir failures, path length validation.
 - **Migration tests**: Unit tests verify .txt to .bin migration for notes and facts (Linux only).
 - **Corruption tests**: Unit tests for empty files, truncated records, malformed data, and minimal valid records (Linux only).
+- **Fuzz/sanity tests**: Long strings, empty/NULL, special chars, numeric boundaries, nonexistent IDs, long filter queries.
+- **Security fixes**: Cap read_str/skip_str length to 16MB (prevents malicious .bin overflow); replace strcpy with snprintf in CLI.
+- **Security regression test**: Malicious length prefix (0xFFFFFFFF) in .bin — verifies no crash.
 
 ### Changed
 

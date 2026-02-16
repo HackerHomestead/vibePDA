@@ -27,6 +27,8 @@ This builds `run_tests` and runs it. Exit code 0 means all tests passed.
   - `storage_init()` and counts: init in a temp dir (uses `.bin` binary files), counts return 0 when empty. Then (unless disabled) the test seeds **dummy data** and asserts counts. See **Dummy data** below.
   - **Migration** (Linux only): Creates `.txt` files in TSV format, runs `storage_init`, verifies migration to `.bin` and that migrated data is readable.
   - **Corruption/edge cases** (Linux only): Empty files, truncated records, malformed data, minimal valid records — verifies no crashes and graceful handling.
+  - **Fuzz/sanity** (test_fuzz.c): Long strings (at/over max), empty/NULL, special chars (tabs, newlines, UTF-8), numeric boundaries, nonexistent IDs, long filter queries.
+  - **Security regression** (Linux only): Malicious length prefix (0xFFFFFFFF) in .bin — verifies read_str/skip_str cap prevents overflow.
   - Trash functionality: soft-delete, trash listing, restore, permanent delete, empty trash.
   - Search/Filter: Filtered list functions for all modules with case-insensitive substring matching.
 

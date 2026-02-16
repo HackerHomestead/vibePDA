@@ -222,6 +222,32 @@ static void test_filter_empty_and_long_query(const char *data_dir) {
     storage_notes_delete(id);
 }
 
+#ifdef PLATFORM_LINUX
+/* Regression: malicious/corrupt length prefix (0xFFFFFFFF) must not cause overflow */
+static void test_malicious_length_prefix(const char *data_dir) {
+    storage_init(data_dir);
+
+    char path[512];
+    snprintf(path, sizeof(path), "%s/notes.bin", data_dir);
+    FILE *f = fopen(path, "wb");
+    assert(f);
+    /* Write id=1, then length=0xFFFFFFFF for title - read_str should cap and not overflow */
+    { unsigned char id4[] = { 1, 0, 0, 0 }; fwrite(id4, 1, 4, f); }
+    { unsigned char len4[] = { 0xff, 0xff, 0xff, 0xff }; fwrite(len4, 1, 4, f); }
+    fclose(f);
+
+    storage_init(data_dir);
+    /* Should not crash; may return 0 or 1 depending on how much we skip */
+    (void)storage_notes_count();
+    {
+        int count = 0;
+        void count_cb(const VibeNote *n, void *ctx) { (void)n; (*(int *)ctx)++; }
+        storage_notes_list(count_cb, &count);
+        assert(count >= 0 && count <= 1);  /* Graceful handling */
+    }
+}
+#endif
+
 static void remove_test_dir(const char *path) {
 #ifdef PLATFORM_LINUX
     char buf[512];
@@ -256,6 +282,10 @@ void test_fuzz(void) {
     test_numeric_boundaries(data_dir);
     test_get_nonexistent_id(data_dir);
     test_filter_empty_and_long_query(data_dir);
+
+#ifdef PLATFORM_LINUX
+    test_malicious_length_prefix(data_dir);
+#endif
 
     if (strcmp(data_dir, ".") != 0)
         remove_test_dir(data_dir);

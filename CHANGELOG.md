@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Storage**: All entity types now use little-endian read_u32/write_u32 for portability. Trash supports finance and document types.
 - **Architecture**: Extracted `ui_box` (box-drawing) and `storage_io` (binary I/O) into separate modules for encapsulation and reuse. Added `docs/ARCHITECTURE.md`.
+- **TUI color scheme**: Blue, gray, yellow, and black palette matching README screenshots. ncurses color pairs for title bar (white on blue), menu bar (yellow), sidebar selection (white on blue), status bar, card titles (cyan), and selected content. Fallback to bold/reverse when terminal lacks color support.
 
 ---
 

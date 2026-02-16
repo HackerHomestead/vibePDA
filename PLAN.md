@@ -21,7 +21,7 @@ Terminal personal data assistant. **Status:** Alpha. **Implementation:** C (C++ 
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **TUI**: curses (ncurses on Linux, PDCurses on DOS); VT102 minimum baseline.
+- **TUI**: curses (ncurses on Linux, PDCurses on DOS); VT102 minimum baseline. Color scheme (blue, gray, yellow, black) matches README screenshots; ncurses color pairs for title bar, menu bar, sidebar selection, status bar, card titles; fallback to bold/reverse when terminal lacks color support.
 - **App**: Holds state (current module, focus, prompt mode, content editor); draws layout; F-keys for actions; note cards (Title + Content); multi-line content editor with cursor, line numbers (F5), scrolling (Page Up/Down); Enter=newline, Enter+Enter=save, Esc=cancel.
 - **Storage**: Single API (storage.h). File-based only (storage_file.c) on all platforms. Binary `.bin` format (length-prefixed strings) so tabs and newlines are safe in data. All entities use soft-delete where applicable; Trash is a view over deleted items. Supports Notes, Tasks, Contacts, Calendar Events, and Facts (key-value pairs).
 - **Config**: Database path, optional editor path, default view; future: JSON or key=value.

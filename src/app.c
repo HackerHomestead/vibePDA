@@ -128,7 +128,7 @@ void app_init(AppState *a, int rows, int cols) {
 
 static void draw_title_bar(const AppState *a) {
     tui_goto(ROW_TITLE, 0);
-    tui_attr_reverse();
+    tui_attr_title_bar();
     tui_putstr(" vibePDA ");
     tui_putstr(" | ");
     tui_putstr(module_names[a->current_module]);
@@ -139,7 +139,7 @@ static void draw_title_bar(const AppState *a) {
 
 static void draw_menu_bar(const AppState *a) {
     tui_goto(ROW_MENU, 0);
-    tui_attr_bold();
+    tui_attr_menu_bar();
     if (a->current_module == MODULE_TRASH) {
         tui_putstr(" F1 Help | R Restore | Space Toggle | A All | U None | X Delete | F10 Quit ");
     } else {
@@ -164,7 +164,7 @@ static void draw_sidebar(const AppState *a) {
             int i = r - top - 1;
             int is_selected = (i == a->current_module && a->focus_sidebar);
             if (is_selected) {
-                tui_attr_reverse();
+                tui_attr_sidebar_selected();
                 tui_putstr("> ");
             } else {
                 tui_putstr("  ");
@@ -246,10 +246,10 @@ static void draw_note_card(AppState *a, int main_col, int main_width, int top, i
     /* Title row */
     tui_goto(top + 1, box_left);
     ui_box_v();
-    tui_attr_bold();
+    tui_attr_card_title();
     tui_putstr(" Title: ");
-    tui_putstr(n->title[0] ? n->title : "(no title)");
     tui_attr_normal();
+    tui_putstr(n->title[0] ? n->title : "(no title)");
     for (int i = 8 + (int)strlen(n->title[0] ? n->title : "(no title)"); i < box_width; i++) tui_putchar(' ');
     ui_box_v();
 
@@ -295,7 +295,7 @@ static void draw_note_card(AppState *a, int main_col, int main_width, int top, i
     {
         char buf[64];
         snprintf(buf, sizeof(buf), " Note %d of %d (Up/Down) ", a->selected_index + 1, count);
-        tui_attr_reverse();
+        tui_attr_dim();
         tui_putstr(buf);
         tui_attr_normal();
     }
@@ -306,7 +306,7 @@ static void draw_task_cb(const VibeTask *t, void *v) {
     if (c->idx < c->scroll_offset) { c->idx++; return; }
     if (*c->row >= c->bottom) return;
     tui_goto(*c->row, c->main_col);
-    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_reverse();
+    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_content_selected();
     char line[256];
     char mark = t->done ? 'x' : ' ';
     snprintf(line, sizeof(line), "[%c] %3d  %.*s", mark, t->id, c->main_width - 12, t->title[0] ? t->title : "(no title)");
@@ -334,7 +334,7 @@ static void draw_single_contact_card(const VibeContact *c, int box_left, int top
     if (box_width < 10) box_width = 10;
     int inner = box_width - 2;
     if (inner < 1) inner = 1;
-    if (is_selected) tui_attr_reverse();
+    if (is_selected) tui_attr_content_selected();
     ui_box_top(top, box_left, box_width);
     tui_goto(top + 1, box_left);
     ui_box_v();
@@ -343,13 +343,13 @@ static void draw_single_contact_card(const VibeContact *c, int box_left, int top
     int name_len = (int)strlen(name);
     for (int i = 0; i < inner; i++) tui_putchar(i < name_len ? name[i] : ' ');
     tui_attr_normal();
-    if (is_selected) tui_attr_reverse();
+    if (is_selected) tui_attr_content_selected();
     ui_box_v();
     if (is_selected) tui_attr_normal();
     ui_box_sep(top + 2, box_left, box_width);
     tui_goto(top + 3, box_left);
     ui_box_v();
-    if (is_selected) tui_attr_reverse();
+    if (is_selected) tui_attr_content_selected();
     tui_putstr(" ");
     const char *email = c->email[0] ? c->email : "-";
     int email_len = (int)strlen(email);
@@ -358,7 +358,7 @@ static void draw_single_contact_card(const VibeContact *c, int box_left, int top
     ui_box_v();
     tui_goto(top + 4, box_left);
     ui_box_v();
-    if (is_selected) tui_attr_reverse();
+    if (is_selected) tui_attr_content_selected();
     tui_putstr(" ");
     const char *phone = c->phone[0] ? c->phone : "-";
     int phone_len = (int)strlen(phone);
@@ -368,7 +368,7 @@ static void draw_single_contact_card(const VibeContact *c, int box_left, int top
     /* Notes row (truncated, first line only) */
     tui_goto(top + 5, box_left);
     ui_box_v();
-    if (is_selected) tui_attr_reverse();
+    if (is_selected) tui_attr_content_selected();
     tui_putstr(" ");
     const char *notes = c->notes[0] ? c->notes : "";
     for (int i = 0; i < inner - 1; i++) {
@@ -439,7 +439,7 @@ static void draw_contact_card(AppState *a, int main_col, int main_width, int top
         char buf[80];
         const char *nav = (num_cols > 1) ? "Up/Down/Left/Right" : "Up/Down";
         snprintf(buf, sizeof(buf), " Contact %d of %d (%s) ", a->selected_index + 1, count, nav);
-        tui_attr_reverse();
+        tui_attr_dim();
         tui_putstr(buf);
         tui_attr_normal();
     }
@@ -450,7 +450,7 @@ static void draw_event_cb(const VibeCalendarEvent *e, void *v) {
     if (c->idx < c->scroll_offset) { c->idx++; return; }
     if (*c->row >= c->bottom) return;
     tui_goto(*c->row, c->main_col);
-    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_reverse();
+    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_content_selected();
     char line[256];
     snprintf(line, sizeof(line), "%3d  %.*s", e->id, c->main_width - 8, e->title[0] ? e->title : "(no title)");
     tui_putstr(line);
@@ -464,7 +464,7 @@ static void draw_fact_cb(const VibeFact *f, void *v) {
     if (c->idx < c->scroll_offset) { c->idx++; return; }
     if (*c->row >= c->bottom) return;
     tui_goto(*c->row, c->main_col);
-    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_reverse();
+    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_content_selected();
     char line[512];
     int key_len = c->main_width - 20;
     if (key_len < 10) key_len = 10;
@@ -481,7 +481,7 @@ static void draw_finance_cb(const VibeFinanceEntry *fe, void *v) {
     if (c->idx < c->scroll_offset) { c->idx++; return; }
     if (*c->row >= c->bottom) return;
     tui_goto(*c->row, c->main_col);
-    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_reverse();
+    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_content_selected();
     char line[256];
     snprintf(line, sizeof(line), "%3d  %s  $%.2f  %.*s", fe->id, fe->date,
              fe->amount, c->main_width - 25, fe->description[0] ? fe->description : "(no description)");
@@ -496,7 +496,7 @@ static void draw_document_cb(const VibeDocument *d, void *v) {
     if (c->idx < c->scroll_offset) { c->idx++; return; }
     if (*c->row >= c->bottom) return;
     tui_goto(*c->row, c->main_col);
-    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_reverse();
+    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_content_selected();
     char line[256];
     int max_title = (int)sizeof(line) - 92;  /* leave room for "%3d  [%.80s] " */
     if (max_title > c->main_width - 20) max_title = c->main_width - 20;
@@ -520,7 +520,7 @@ static void draw_trash_cb(int entity_type, int id, const char *title, void *v) {
     if (*c->row >= c->bottom) return;
     
     tui_goto(*c->row, c->main_col);
-    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_reverse();
+    if (c->idx == c->selected && !c->focus_sidebar) tui_attr_content_selected();
     
     /* Show checkbox */
     int checked = (c->idx < MAX_TRASH_ITEMS && trash_selected[c->idx]) ? 1 : 0;
@@ -669,7 +669,7 @@ static void draw_main(AppState *a) {
 static void draw_status_bar(const AppState *a) {
     int status_row = a->rows - 1;
     tui_goto(status_row, 0);
-    tui_attr_reverse();
+    tui_attr_status_bar();
     
     /* Build status string: ":Module=>State" */
     char status_buf[64];
@@ -716,7 +716,7 @@ static void draw_status_bar(const AppState *a) {
 static void draw_prompt(const AppState *a) {
     int row = a->rows - 1;
     tui_goto(row, 0);
-    tui_attr_reverse();
+    tui_attr_status_bar();
     tui_putstr(a->prompt_label);
     tui_putstr(a->prompt_buf);
     /* Show blinking cursor - toggle based on a simple counter */
@@ -741,7 +741,7 @@ static void draw_prompt(const AppState *a) {
 static void draw_search_prompt(const AppState *a) {
     int row = a->rows - 1;
     tui_goto(row, 0);
-    tui_attr_reverse();
+    tui_attr_status_bar();
     tui_putstr(" Search: ");
     tui_putstr(a->search_query);
     /* Show blinking cursor - toggle based on a simple counter */
@@ -841,7 +841,9 @@ static void draw_contact_form_editor(AppState *a) {
     /* Name row */
     tui_goto(CONTACT_FORM_TOP + 1, CONTACT_FORM_LEFT);
     ui_box_v();
+    tui_attr_card_title();
     tui_putstr(" Name:  ");
+    tui_attr_normal();
     const char *name_val = (a->content_edit_field == 0) ? a->prompt_buf : a->prompt_data[0];
     int name_len = (int)strlen(name_val);
     for (int i = 0; i < inner - 7; i++) {
@@ -854,7 +856,9 @@ static void draw_contact_form_editor(AppState *a) {
     /* Email row */
     tui_goto(CONTACT_FORM_TOP + 2, CONTACT_FORM_LEFT);
     ui_box_v();
+    tui_attr_card_title();
     tui_putstr(" Email: ");
+    tui_attr_normal();
     const char *email_val = (a->content_edit_field == 1) ? a->prompt_buf : a->prompt_data[1];
     int email_len = (int)strlen(email_val);
     for (int i = 0; i < inner - 7; i++) {
@@ -867,7 +871,9 @@ static void draw_contact_form_editor(AppState *a) {
     /* Phone row */
     tui_goto(CONTACT_FORM_TOP + 3, CONTACT_FORM_LEFT);
     ui_box_v();
+    tui_attr_card_title();
     tui_putstr(" Phone: ");
+    tui_attr_normal();
     const char *phone_val = (a->content_edit_field == 2) ? a->prompt_buf : a->prompt_data[2];
     int phone_len = (int)strlen(phone_val);
     for (int i = 0; i < inner - 7; i++) {
@@ -921,7 +927,7 @@ static void draw_contact_form_editor(AppState *a) {
     ui_box_bottom(CONTACT_FORM_TOP + 5 + content_rows, CONTACT_FORM_LEFT, box_width);
 
     tui_goto(CONTACT_FORM_TOP + 6 + content_rows, CONTACT_FORM_LEFT);
-    tui_attr_reverse();
+    tui_attr_dim();
     tui_putstr(" Tab=Next  Enter+Enter=Save  Esc=Cancel ");
     tui_attr_normal();
 }
@@ -942,7 +948,9 @@ static void draw_content_editor(AppState *a) {
     /* Title row */
     tui_goto(CONTENT_BOX_TOP + 1, CONTENT_BOX_LEFT);
     ui_box_v();
+    tui_attr_card_title();
     tui_putstr(" Title: ");
+    tui_attr_normal();
     tui_putstr(a->prompt_data[0][0] ? a->prompt_data[0] : "(no title)");
     for (int i = 8 + (int)strlen(a->prompt_data[0][0] ? a->prompt_data[0] : "(no title)"); i < box_width; i++) tui_putchar(' ');
     ui_box_v();
@@ -1054,7 +1062,7 @@ static void draw_content_editor(AppState *a) {
 
     /* Hint */
     tui_goto(CONTENT_BOX_TOP + 4 + content_rows, CONTENT_BOX_LEFT);
-    tui_attr_reverse();
+    tui_attr_dim();
     char hint[80];
     const char *ln_status = a->content_edit_show_line_numbers ? "ON" : "OFF";
     snprintf(hint, sizeof(hint), " Enter=Newline  Enter+Enter=Save  Esc=Cancel  F5=Line# %s", ln_status);
@@ -1105,7 +1113,7 @@ static void draw_help(const AppState *a) {
         tui_putstr(help_text[i]);
     }
     tui_goto(status_row, 0);
-    tui_attr_reverse();
+    tui_attr_status_bar();
     tui_putstr(" Press any key to close ");
     tui_attr_normal();
 }

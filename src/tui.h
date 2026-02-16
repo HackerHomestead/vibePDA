@@ -53,4 +53,13 @@ void tui_attr_normal(void);
 void tui_attr_bold(void);
 void tui_attr_reverse(void);
 
+/* Color scheme (matches README screenshots). Fallback to bold/reverse when no colors. */
+void tui_attr_title_bar(void);
+void tui_attr_menu_bar(void);
+void tui_attr_sidebar_selected(void);
+void tui_attr_card_title(void);
+void tui_attr_status_bar(void);
+void tui_attr_content_selected(void);
+void tui_attr_dim(void);
+
 #endif

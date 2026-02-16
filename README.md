@@ -8,7 +8,7 @@
 
 **Status:** Alpha. Core TUI, storage, and CRUD are in place; polish and full feature parity are ongoing.
 
-**C** implementation with three build targets: **1) Linux**, **2) FreeDOS** (DJGPP), **3) WebAssembly** (Emscripten). Uses **curses** (ncurses on Linux, PDCurses on DOS). Terminal: VT102 minimum; on Linux, modern terminal standards (e.g. SGR, 256 colors) may be used. File-based storage on all platforms (no SQLite).
+**C** implementation with three build targets: **1) Linux**, **2) FreeDOS** (DJGPP), **3) WebAssembly** (Emscripten). Uses **curses** (ncurses on Linux, PDCurses on DOS). Terminal: VT102 minimum; on Linux, modern terminal standards (e.g. SGR, 256 colors) may be used. **Color scheme** (blue, gray, yellow, black) matches the screenshots; falls back to bold/reverse when the terminal lacks color support. File-based storage on all platforms (no SQLite).
 
 **📖 [User Manual](docs/USER_MANUAL.md)** — Comprehensive guide with detailed instructions for all features.
 

@@ -28,7 +28,7 @@ Architecture overview, layering, and refactoring guidelines for maintainability 
 
 | Module | Responsibility | Depends On |
 |--------|----------------|------------|
-| **tui** | Raw terminal I/O (curses), keys, attributes | — |
+| **tui** | Raw terminal I/O (curses), keys, attributes, color scheme (blue/gray/yellow/black) | — |
 | **ui_box** | Box-drawing primitives (top, sep, bottom, vertical) | tui |
 | **app** | App state, key dispatch, layout orchestration, CRUD flow | tui, ui_box, storage, types |
 | **storage** | CRUD API for all entities, trash, migration | types, storage_io |

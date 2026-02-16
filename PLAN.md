@@ -84,10 +84,12 @@ vibe/
 │   ├── main.c              # Entry; parse_args (--help, --version); TUI loop
 │   ├── app.c, app.h        # App shell: state, F-keys, note cards, content editor
 │   ├── tui.c, tui.h        # Presentation: curses (ncurses/PDCurses), keys, attributes
+│   ├── ui_box.c, ui_box.h  # Box-drawing primitives (Unicode/ASCII)
 │   ├── vibe_config.c, vibe_config.h  # Config layer: paths, defaults
 │   ├── types.h             # Data types: Note, Task, Contact, CalendarEvent, Fact
-│   ├── storage.h            # Storage API: init, *_count, *_list, *_add, *_update, *_delete, *_restore
-│   └── storage_file.c       # File-based backend (all platforms)
+│   ├── storage.h           # Storage API: init, *_count, *_list, *_add, *_update, *_delete, *_restore
+│   ├── storage_io.c, storage_io.h  # Binary I/O helpers (internal to storage)
+│   └── storage_file.c      # File-based backend (all platforms)
 ├── tests/
 │   ├── run_tests.c
 │   ├── test_app.c

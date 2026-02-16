@@ -2,51 +2,16 @@
  *
  * 1980s-style TUI: menu bar, sidebar, main pane, F-keys, status line.
  * Handles CRUD, content editor, search/filter, trash. Draws note cards, lists.
- * Uses Unicode box-drawing characters (U+2500 block) for borders.
  */
 #include "app.h"
 #include "tui.h"
+#include "ui_box.h"
 #include "storage.h"
 #include "types.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
-/* Box-drawing: Unicode (U+2500) or ASCII fallback for terminals that break (e.g. Mac Terminal).
- * Set VIBE_ASCII_BOX=1 to force ASCII (+ - |) for compatibility. */
-#include <ctype.h>
-
-static int use_ascii_box = -1;  /* -1=unset, 0=Unicode, 1=ASCII */
-
-static void init_box_style(void) {
-    if (use_ascii_box >= 0) return;
-    const char *e = getenv("VIBE_ASCII_BOX");
-    use_ascii_box = (e && (e[0] == '1' || (e[0] != '0' && tolower((unsigned char)e[0]) == 'y'))) ? 1 : 0;
-}
-
-static void box_top(int row, int col, int w) {
-    init_box_style();
-    tui_goto(row, col);
-    if (use_ascii_box) { tui_putchar('+'); for (int i = 0; i < w; i++) tui_putchar('-'); tui_putchar('+'); }
-    else { tui_putstr("\xe2\x94\x8c"); for (int i = 0; i < w; i++) tui_putstr("\xe2\x94\x80"); tui_putstr("\xe2\x94\x90"); }
-}
-static void box_sep(int row, int col, int w) {
-    init_box_style();
-    tui_goto(row, col);
-    if (use_ascii_box) { tui_putchar('|'); for (int i = 0; i < w; i++) tui_putchar('-'); tui_putchar('|'); }
-    else { tui_putstr("\xe2\x94\x9c"); for (int i = 0; i < w; i++) tui_putstr("\xe2\x94\x80"); tui_putstr("\xe2\x94\xa4"); }
-}
-static void box_bottom(int row, int col, int w) {
-    init_box_style();
-    tui_goto(row, col);
-    if (use_ascii_box) { tui_putchar('+'); for (int i = 0; i < w; i++) tui_putchar('-'); tui_putchar('+'); }
-    else { tui_putstr("\xe2\x94\x94"); for (int i = 0; i < w; i++) tui_putstr("\xe2\x94\x80"); tui_putstr("\xe2\x94\x98"); }
-}
-static void box_v(void) {
-    init_box_style();
-    if (use_ascii_box) tui_putchar('|');
-    else tui_putstr("\xe2\x94\x82");
-}
 static const char *module_names[] = {
     "Notes", "Tasks", "Contacts", "Calendar", "Facts", "Finances", "Documents", "Trash"
 };
@@ -232,6 +197,7 @@ typedef struct {
     int idx;
     int selected;
     int focus_sidebar;
+    int scroll_offset;  /* skip this many items before drawing (for list scroll) */
 } DrawCtx;
 
 typedef struct {
@@ -275,20 +241,20 @@ static void draw_note_card(AppState *a, int main_col, int main_width, int top, i
     if (box_width < 10) box_width = 10;
 
     /* Card top border */
-    box_top(top, box_left, box_width);
+    ui_box_top(top, box_left, box_width);
 
     /* Title row */
     tui_goto(top + 1, box_left);
-    box_v();
+    ui_box_v();
     tui_attr_bold();
     tui_putstr(" Title: ");
     tui_putstr(n->title[0] ? n->title : "(no title)");
     tui_attr_normal();
     for (int i = 8 + (int)strlen(n->title[0] ? n->title : "(no title)"); i < box_width; i++) tui_putchar(' ');
-    box_v();
+    ui_box_v();
 
     /* Separator */
-    box_sep(top + 2, box_left, box_width);
+    ui_box_sep(top + 2, box_left, box_width);
 
     /* Content rows */
     const char *p = n->content;
@@ -300,7 +266,7 @@ static void draw_note_card(AppState *a, int main_col, int main_width, int top, i
     if (content_width < 1) content_width = 1;
     while (line < max_lines) {
         tui_goto(top + 3 + line, box_left);
-        box_v();
+        ui_box_v();
         int col = 1;
         while (i < (int)strlen(n->content) && col < box_width - 1) {
             char ch = p[i++];
@@ -310,19 +276,19 @@ static void draw_note_card(AppState *a, int main_col, int main_width, int top, i
         }
         if (i < (int)strlen(n->content) && p[i] == '\n') i++;
         for (; col < box_width - 1; col++) tui_putchar(' ');
-        box_v();
+        ui_box_v();
         line++;
         if (i >= (int)strlen(n->content)) break;
     }
     for (; line < max_lines; line++) {
         tui_goto(top + 3 + line, box_left);
-        box_v();
+        ui_box_v();
         for (int c = 1; c < box_width - 1; c++) tui_putchar(' ');
-        box_v();
+        ui_box_v();
     }
 
     /* Bottom border */
-    box_bottom(top + 3 + max_lines, box_left, box_width);
+    ui_box_bottom(top + 3 + max_lines, box_left, box_width);
 
     /* Card index hint */
     tui_goto(top + 4 + max_lines, box_left);
@@ -337,6 +303,7 @@ static void draw_note_card(AppState *a, int main_col, int main_width, int top, i
 
 static void draw_task_cb(const VibeTask *t, void *v) {
     DrawCtx *c = (DrawCtx *)v;
+    if (c->idx < c->scroll_offset) { c->idx++; return; }
     if (*c->row >= c->bottom) return;
     tui_goto(*c->row, c->main_col);
     if (c->idx == c->selected && !c->focus_sidebar) tui_attr_reverse();
@@ -368,39 +335,39 @@ static void draw_single_contact_card(const VibeContact *c, int box_left, int top
     int inner = box_width - 2;
     if (inner < 1) inner = 1;
     if (is_selected) tui_attr_reverse();
-    box_top(top, box_left, box_width);
+    ui_box_top(top, box_left, box_width);
     tui_goto(top + 1, box_left);
-    box_v();
+    ui_box_v();
     tui_attr_bold();
     const char *name = c->name[0] ? c->name : "(no name)";
     int name_len = (int)strlen(name);
     for (int i = 0; i < inner; i++) tui_putchar(i < name_len ? name[i] : ' ');
     tui_attr_normal();
     if (is_selected) tui_attr_reverse();
-    box_v();
+    ui_box_v();
     if (is_selected) tui_attr_normal();
-    box_sep(top + 2, box_left, box_width);
+    ui_box_sep(top + 2, box_left, box_width);
     tui_goto(top + 3, box_left);
-    box_v();
+    ui_box_v();
     if (is_selected) tui_attr_reverse();
     tui_putstr(" ");
     const char *email = c->email[0] ? c->email : "-";
     int email_len = (int)strlen(email);
     for (int i = 0; i < inner - 1; i++) tui_putchar(i < email_len ? email[i] : ' ');
     if (is_selected) tui_attr_normal();
-    box_v();
+    ui_box_v();
     tui_goto(top + 4, box_left);
-    box_v();
+    ui_box_v();
     if (is_selected) tui_attr_reverse();
     tui_putstr(" ");
     const char *phone = c->phone[0] ? c->phone : "-";
     int phone_len = (int)strlen(phone);
     for (int i = 0; i < inner - 1; i++) tui_putchar(i < phone_len ? phone[i] : ' ');
     if (is_selected) tui_attr_normal();
-    box_v();
+    ui_box_v();
     /* Notes row (truncated, first line only) */
     tui_goto(top + 5, box_left);
-    box_v();
+    ui_box_v();
     if (is_selected) tui_attr_reverse();
     tui_putstr(" ");
     const char *notes = c->notes[0] ? c->notes : "";
@@ -409,8 +376,8 @@ static void draw_single_contact_card(const VibeContact *c, int box_left, int top
         tui_putchar(ch);
     }
     if (is_selected) tui_attr_normal();
-    box_v();
-    box_bottom(top + 6, box_left, box_width);
+    ui_box_v();
+    ui_box_bottom(top + 6, box_left, box_width);
 }
 
 static void draw_contact_card(AppState *a, int main_col, int main_width, int top, int bottom) {
@@ -480,6 +447,7 @@ static void draw_contact_card(AppState *a, int main_col, int main_width, int top
 
 static void draw_event_cb(const VibeCalendarEvent *e, void *v) {
     DrawCtx *c = (DrawCtx *)v;
+    if (c->idx < c->scroll_offset) { c->idx++; return; }
     if (*c->row >= c->bottom) return;
     tui_goto(*c->row, c->main_col);
     if (c->idx == c->selected && !c->focus_sidebar) tui_attr_reverse();
@@ -493,6 +461,7 @@ static void draw_event_cb(const VibeCalendarEvent *e, void *v) {
 
 static void draw_fact_cb(const VibeFact *f, void *v) {
     DrawCtx *c = (DrawCtx *)v;
+    if (c->idx < c->scroll_offset) { c->idx++; return; }
     if (*c->row >= c->bottom) return;
     tui_goto(*c->row, c->main_col);
     if (c->idx == c->selected && !c->focus_sidebar) tui_attr_reverse();
@@ -509,6 +478,7 @@ static void draw_fact_cb(const VibeFact *f, void *v) {
 
 static void draw_finance_cb(const VibeFinanceEntry *fe, void *v) {
     DrawCtx *c = (DrawCtx *)v;
+    if (c->idx < c->scroll_offset) { c->idx++; return; }
     if (*c->row >= c->bottom) return;
     tui_goto(*c->row, c->main_col);
     if (c->idx == c->selected && !c->focus_sidebar) tui_attr_reverse();
@@ -523,6 +493,7 @@ static void draw_finance_cb(const VibeFinanceEntry *fe, void *v) {
 
 static void draw_document_cb(const VibeDocument *d, void *v) {
     DrawCtx *c = (DrawCtx *)v;
+    if (c->idx < c->scroll_offset) { c->idx++; return; }
     if (*c->row >= c->bottom) return;
     tui_goto(*c->row, c->main_col);
     if (c->idx == c->selected && !c->focus_sidebar) tui_attr_reverse();
@@ -540,13 +511,13 @@ static void draw_document_cb(const VibeDocument *d, void *v) {
 
 static void draw_trash_cb(int entity_type, int id, const char *title, void *v) {
     DrawCtx *c = (DrawCtx *)v;
-    if (*c->row >= c->bottom) return;
-    
-    /* Store trash item for restore */
+    /* Always store every trash item for restore/delete - needed even when scrolled off-screen */
     if (c->idx < MAX_TRASH_ITEMS) {
         trash_items[c->idx].entity_type = entity_type;
         trash_items[c->idx].id = id;
     }
+    if (c->idx < c->scroll_offset) { c->idx++; return; }
+    if (*c->row >= c->bottom) return;
     
     tui_goto(*c->row, c->main_col);
     if (c->idx == c->selected && !c->focus_sidebar) tui_attr_reverse();
@@ -601,7 +572,19 @@ static void draw_main(AppState *a) {
     tui_attr_normal();
     row++;
 
-    DrawCtx dctx = {&row, bottom, main_col, main_width, 0, a->selected_index, a->focus_sidebar};
+    /* List scroll: when more items than fit, skip items so selection stays visible */
+    int content_bottom = bottom;
+    if (a->current_module == MODULE_TRASH && trash_confirm_mode)
+        content_bottom = bottom - 4;  /* reserve rows for confirmation prompt */
+    int visible_rows = content_bottom - row;
+    if (visible_rows < 1) visible_rows = 1;
+    int list_scroll = 0;
+    if (count > visible_rows && a->selected_index >= visible_rows)
+        list_scroll = a->selected_index - visible_rows + 1;
+    if (list_scroll > count - visible_rows) list_scroll = count - visible_rows;
+    if (list_scroll < 0) list_scroll = 0;
+
+    DrawCtx dctx = {&row, content_bottom, main_col, main_width, 0, a->selected_index, a->focus_sidebar, list_scroll};
 
     if (a->current_module == MODULE_NOTES) {
         if (count > 0) {
@@ -853,11 +836,11 @@ static void draw_contact_form_editor(AppState *a) {
     int inner = box_width - 2;
     if (inner < 1) inner = 1;
 
-    box_top(CONTACT_FORM_TOP, CONTACT_FORM_LEFT, box_width);
+    ui_box_top(CONTACT_FORM_TOP, CONTACT_FORM_LEFT, box_width);
 
     /* Name row */
     tui_goto(CONTACT_FORM_TOP + 1, CONTACT_FORM_LEFT);
-    box_v();
+    ui_box_v();
     tui_putstr(" Name:  ");
     const char *name_val = (a->content_edit_field == 0) ? a->prompt_buf : a->prompt_data[0];
     int name_len = (int)strlen(name_val);
@@ -866,11 +849,11 @@ static void draw_contact_form_editor(AppState *a) {
         tui_putchar(i < name_len ? (name_val[i] >= 32 && name_val[i] < 127 ? name_val[i] : ' ') : ' ');
         if (a->content_edit_field == 0 && i == a->prompt_len) tui_attr_normal();
     }
-    box_v();
+    ui_box_v();
 
     /* Email row */
     tui_goto(CONTACT_FORM_TOP + 2, CONTACT_FORM_LEFT);
-    box_v();
+    ui_box_v();
     tui_putstr(" Email: ");
     const char *email_val = (a->content_edit_field == 1) ? a->prompt_buf : a->prompt_data[1];
     int email_len = (int)strlen(email_val);
@@ -879,11 +862,11 @@ static void draw_contact_form_editor(AppState *a) {
         tui_putchar(i < email_len ? (email_val[i] >= 32 && email_val[i] < 127 ? email_val[i] : ' ') : ' ');
         if (a->content_edit_field == 1 && i == a->prompt_len) tui_attr_normal();
     }
-    box_v();
+    ui_box_v();
 
     /* Phone row */
     tui_goto(CONTACT_FORM_TOP + 3, CONTACT_FORM_LEFT);
-    box_v();
+    ui_box_v();
     tui_putstr(" Phone: ");
     const char *phone_val = (a->content_edit_field == 2) ? a->prompt_buf : a->prompt_data[2];
     int phone_len = (int)strlen(phone_val);
@@ -892,9 +875,9 @@ static void draw_contact_form_editor(AppState *a) {
         tui_putchar(i < phone_len ? (phone_val[i] >= 32 && phone_val[i] < 127 ? phone_val[i] : ' ') : ' ');
         if (a->content_edit_field == 2 && i == a->prompt_len) tui_attr_normal();
     }
-    box_v();
+    ui_box_v();
 
-    box_sep(CONTACT_FORM_TOP + 4, CONTACT_FORM_LEFT, box_width);
+    ui_box_sep(CONTACT_FORM_TOP + 4, CONTACT_FORM_LEFT, box_width);
 
     /* Notes content area */
     const char *p = a->content_edit_buf;
@@ -910,7 +893,7 @@ static void draw_contact_form_editor(AppState *a) {
     int line = 0;
     while (line < content_rows) {
         tui_goto(CONTACT_FORM_TOP + 5 + line, CONTACT_FORM_LEFT);
-        box_v();
+        ui_box_v();
         tui_putstr(" ");
         int col = 0;
         while (i < a->content_edit_len && col < inner - 1) {
@@ -924,18 +907,18 @@ static void draw_contact_form_editor(AppState *a) {
         if (a->content_edit_field == 3 && i == a->content_edit_cursor_pos && col < inner - 1) tui_attr_reverse();
         for (; col < inner - 1; col++) tui_putchar(' ');
         if (a->content_edit_field == 3 && i == a->content_edit_cursor_pos) tui_attr_normal();
-        box_v();
+        ui_box_v();
         line++;
         if (i >= a->content_edit_len) break;
     }
     for (; line < content_rows; line++) {
         tui_goto(CONTACT_FORM_TOP + 5 + line, CONTACT_FORM_LEFT);
-        box_v();
+        ui_box_v();
         for (int c = 0; c < inner; c++) tui_putchar(' ');
-        box_v();
+        ui_box_v();
     }
 
-    box_bottom(CONTACT_FORM_TOP + 5 + content_rows, CONTACT_FORM_LEFT, box_width);
+    ui_box_bottom(CONTACT_FORM_TOP + 5 + content_rows, CONTACT_FORM_LEFT, box_width);
 
     tui_goto(CONTACT_FORM_TOP + 6 + content_rows, CONTACT_FORM_LEFT);
     tui_attr_reverse();
@@ -954,18 +937,18 @@ static void draw_content_editor(AppState *a) {
     if (text_width < 5) text_width = 5;
 
     /* Top border */
-    box_top(CONTENT_BOX_TOP, CONTENT_BOX_LEFT, box_width);
+    ui_box_top(CONTENT_BOX_TOP, CONTENT_BOX_LEFT, box_width);
 
     /* Title row */
     tui_goto(CONTENT_BOX_TOP + 1, CONTENT_BOX_LEFT);
-    box_v();
+    ui_box_v();
     tui_putstr(" Title: ");
     tui_putstr(a->prompt_data[0][0] ? a->prompt_data[0] : "(no title)");
     for (int i = 8 + (int)strlen(a->prompt_data[0][0] ? a->prompt_data[0] : "(no title)"); i < box_width; i++) tui_putchar(' ');
-    box_v();
+    ui_box_v();
 
     /* Separator */
-    box_sep(CONTENT_BOX_TOP + 2, CONTENT_BOX_LEFT, box_width);
+    ui_box_sep(CONTENT_BOX_TOP + 2, CONTENT_BOX_LEFT, box_width);
 
     /* Content rows - render line by line with cursor and scrolling */
     const char *p = a->content_edit_buf;
@@ -995,7 +978,7 @@ static void draw_content_editor(AppState *a) {
     
     while (line < content_rows) {
         tui_goto(CONTENT_BOX_TOP + 3 + line, CONTENT_BOX_LEFT);
-        box_v();
+        ui_box_v();
         
         /* Line number */
         if (a->content_edit_show_line_numbers) {
@@ -1031,7 +1014,7 @@ static void draw_content_editor(AppState *a) {
             }
             tui_putchar(' ');
         }
-        box_v();
+        ui_box_v();
         line++;
         line_num++;
         if (i >= a->content_edit_len) {
@@ -1045,14 +1028,14 @@ static void draw_content_editor(AppState *a) {
     }
     for (; line < content_rows; line++) {
         tui_goto(CONTENT_BOX_TOP + 3 + line, CONTENT_BOX_LEFT);
-        box_v();
+        ui_box_v();
         if (a->content_edit_show_line_numbers) {
             char num_buf[16];
             int n = snprintf(num_buf, sizeof(num_buf), "%4d ", line_num + 1);
             if (n > 0 && n < (int)sizeof(num_buf)) tui_putstr(num_buf);
         }
         for (int c = 0; c < text_width; c++) tui_putchar(' ');
-        box_v();
+        ui_box_v();
         line_num++;
     }
     
@@ -1067,7 +1050,7 @@ static void draw_content_editor(AppState *a) {
     }
 
     /* Bottom border */
-    box_bottom(CONTENT_BOX_TOP + 3 + content_rows, CONTENT_BOX_LEFT, box_width);
+    ui_box_bottom(CONTENT_BOX_TOP + 3 + content_rows, CONTENT_BOX_LEFT, box_width);
 
     /* Hint */
     tui_goto(CONTENT_BOX_TOP + 4 + content_rows, CONTENT_BOX_LEFT);
@@ -1871,7 +1854,7 @@ void app_handle_key(AppState *a, int key) {
             }
             
             if (is_double_enter) {
-                /* Two blank lines in a row - save the note */
+                /* Two blank lines in a row - save the note or document */
                 snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%.255s", a->content_edit_buf);
                 if (a->prompt_is_edit) {
                     int id = get_selected_id(a);
@@ -1879,6 +1862,9 @@ void app_handle_key(AppState *a, int key) {
                         if (a->current_module == MODULE_NOTES) {
                             storage_notes_update(id, a->prompt_data[0], a->content_edit_buf);
                             snprintf(a->message, sizeof(a->message), "Note updated.");
+                        } else if (a->current_module == MODULE_DOCUMENTS) {
+                            storage_documents_update(id, a->prompt_data[0], a->prompt_data[1], a->content_edit_buf);
+                            snprintf(a->message, sizeof(a->message), "Document updated.");
                         }
                     }
                 } else {
@@ -1886,6 +1872,10 @@ void app_handle_key(AppState *a, int key) {
                         int id = storage_notes_add(a->prompt_data[0], a->content_edit_buf);
                         snprintf(a->message, sizeof(a->message), "Note %d added.", id);
                         a->selected_index = get_item_count(MODULE_NOTES) - 1;
+                    } else if (a->current_module == MODULE_DOCUMENTS) {
+                        int id = storage_documents_add(a->prompt_data[0], a->prompt_data[1], a->content_edit_buf);
+                        snprintf(a->message, sizeof(a->message), "Document %d added.", id);
+                        a->selected_index = get_item_count(MODULE_DOCUMENTS) - 1;
                     }
                 }
                 a->content_edit_mode = 0;
@@ -2019,7 +2009,7 @@ void app_handle_key(AppState *a, int key) {
             }
             
             if (is_double_enter) {
-                /* Two blank lines in a row - save the note */
+                /* Two blank lines in a row - save the note or document */
                 snprintf(a->prompt_data[1], sizeof(a->prompt_data[1]), "%.255s", a->content_edit_buf);
                 if (a->prompt_is_edit) {
                     int id = get_selected_id(a);
@@ -2027,6 +2017,9 @@ void app_handle_key(AppState *a, int key) {
                         if (a->current_module == MODULE_NOTES) {
                             storage_notes_update(id, a->prompt_data[0], a->content_edit_buf);
                             snprintf(a->message, sizeof(a->message), "Note updated.");
+                        } else if (a->current_module == MODULE_DOCUMENTS) {
+                            storage_documents_update(id, a->prompt_data[0], a->prompt_data[1], a->content_edit_buf);
+                            snprintf(a->message, sizeof(a->message), "Document updated.");
                         }
                     }
                 } else {
@@ -2034,6 +2027,10 @@ void app_handle_key(AppState *a, int key) {
                         int id = storage_notes_add(a->prompt_data[0], a->content_edit_buf);
                         snprintf(a->message, sizeof(a->message), "Note %d added.", id);
                         a->selected_index = get_item_count(MODULE_NOTES) - 1;
+                    } else if (a->current_module == MODULE_DOCUMENTS) {
+                        int id = storage_documents_add(a->prompt_data[0], a->prompt_data[1], a->content_edit_buf);
+                        snprintf(a->message, sizeof(a->message), "Document %d added.", id);
+                        a->selected_index = get_item_count(MODULE_DOCUMENTS) - 1;
                     }
                 }
                 a->content_edit_mode = 0;

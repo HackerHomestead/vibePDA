@@ -14,6 +14,12 @@ make test
 
 This builds `run_tests` and runs it. Exit code 0 means all tests passed.
 
+**Verbosity:** By default, tests print each sub-test name as it runs. Set `VIBE_TEST_VERBOSE=0` for quiet output (e.g. in CI):
+
+```bash
+VIBE_TEST_VERBOSE=0 make test
+```
+
 ### What is tested
 
 - **App (UI/UX)**  

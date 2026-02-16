@@ -6,6 +6,7 @@
  */
 
 #include "storage.h"
+#include "test_common.h"
 #include "types.h"
 #include <assert.h>
 #include <stdio.h>
@@ -276,14 +277,21 @@ void test_fuzz(void) {
     snprintf(data_dir, sizeof(data_dir), ".");
 #endif
 
+    if (test_verbose()) fprintf(stderr, "    long_strings\n");
     test_long_strings(data_dir);
+    if (test_verbose()) fprintf(stderr, "    empty_and_null_strings\n");
     test_empty_and_null_strings(data_dir);
+    if (test_verbose()) fprintf(stderr, "    special_characters\n");
     test_special_characters(data_dir);
+    if (test_verbose()) fprintf(stderr, "    numeric_boundaries\n");
     test_numeric_boundaries(data_dir);
+    if (test_verbose()) fprintf(stderr, "    get_nonexistent_id\n");
     test_get_nonexistent_id(data_dir);
+    if (test_verbose()) fprintf(stderr, "    filter_empty_and_long_query\n");
     test_filter_empty_and_long_query(data_dir);
 
 #ifdef PLATFORM_LINUX
+    if (test_verbose()) fprintf(stderr, "    malicious_length_prefix\n");
     test_malicious_length_prefix(data_dir);
 #endif
 

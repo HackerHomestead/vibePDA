@@ -2,6 +2,7 @@
 
 #include "vibe_config.h"
 #include "storage.h"
+#include "test_common.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -51,7 +52,9 @@ static void test_data_dir_override(void) {
 }
 
 void test_config(void) {
+    if (test_verbose()) fprintf(stderr, "    config_defaults\n");
     test_config_defaults();
+    if (test_verbose()) fprintf(stderr, "    data_dir_override\n");
     test_data_dir_override();
 }
 

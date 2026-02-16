@@ -11,6 +11,7 @@
 
 #include "config.h"
 #include "storage.h"
+#include "storage_io.h"
 #include "types.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -26,7 +27,6 @@
 #define DATA_DIR_MAX 256
 #define LINE_MAX 8192
 #define EXT ".bin"
-#define MAX_STRING_LEN (16 * 1024 * 1024)  /* 16MB cap to prevent malicious length overflow */
 
 /* Entity type codes for trash/restore (must match MODULE_* in app.h) */
 #define ENTITY_NOTE     0
@@ -76,53 +76,6 @@ static int str_contains_ci(const char *haystack, const char *needle) {
         n = n_start;
     }
     return 0;
-}
-
-/* Binary I/O helpers - little-endian */
-static int write_u32(FILE *f, uint32_t v) {
-    unsigned char b[4];
-    b[0] = (unsigned char)(v & 0xff);
-    b[1] = (unsigned char)((v >> 8) & 0xff);
-    b[2] = (unsigned char)((v >> 16) & 0xff);
-    b[3] = (unsigned char)((v >> 24) & 0xff);
-    return fwrite(b, 1, 4, f) == 4;
-}
-static int write_str(FILE *f, const char *s) {
-    size_t len = s ? strlen(s) : 0;
-    if (len > 0x7fffffff) len = 0x7fffffff;
-    if (!write_u32(f, (uint32_t)len)) return 0;
-    if (len > 0 && fwrite(s, 1, len, f) != len) return 0;
-    return 1;
-}
-static int read_u32(FILE *f, uint32_t *out) {
-    unsigned char b[4];
-    if (fread(b, 1, 4, f) != 4) return 0;
-    *out = (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
-    return 1;
-}
-static int read_str(FILE *f, char *buf, int max) {
-    uint32_t len;
-    if (!read_u32(f, &len)) return 0;
-    if (len == 0) { buf[0] = '\0'; return 1; }
-    /* Cap len to prevent malicious/corrupt length from causing overflow */
-    if (len > MAX_STRING_LEN) len = MAX_STRING_LEN;
-    if (len >= (uint32_t)max) {
-        size_t to_read = (size_t)(max - 1);
-        if (fread(buf, 1, to_read, f) != to_read) return 0;
-        buf[max - 1] = '\0';
-        if (fseek(f, (long)(len - (max - 1)), SEEK_CUR) != 0) return 0;
-    } else {
-        if (fread(buf, 1, len, f) != len) return 0;
-        buf[len] = '\0';
-    }
-    return 1;
-}
-static int skip_str(FILE *f) {
-    uint32_t len;
-    if (!read_u32(f, &len)) return 0;
-    if (len > MAX_STRING_LEN) len = MAX_STRING_LEN;  /* Prevent malicious huge seek */
-    if (fseek(f, (long)len, SEEK_CUR) != 0) return 0;
-    return 1;
 }
 
 #ifdef PLATFORM_LINUX
@@ -216,11 +169,11 @@ static void migrate_notes_txt_to_bin(const char *path_txt, const char *path_bin)
         parse_tab_field(&p, deleted, sizeof(deleted));
         int id = atoi(id_buf);
         if (id <= 0) continue;
-        write_u32(out, (uint32_t)id);
-        write_str(out, title);
-        write_str(out, content);
-        write_str(out, created);
-        write_str(out, deleted[0] ? deleted : "");
+        storage_io_write_u32(out, (uint32_t)id);
+        storage_io_write_str(out, title);
+        storage_io_write_str(out, content);
+        storage_io_write_str(out, created);
+        storage_io_write_str(out, deleted[0] ? deleted : "");
     }
     fclose(in);
     fclose(out);
@@ -245,13 +198,13 @@ static void migrate_tasks_txt_to_bin(const char *path_txt, const char *path_bin)
         parse_tab_field(&p, deleted, sizeof(deleted));
         int id = atoi(id_buf);
         if (id <= 0) continue;
-        write_u32(out, (uint32_t)id);
-        write_str(out, title);
-        write_u32(out, (uint32_t)atoi(done_buf));
-        write_str(out, due);
-        write_u32(out, (uint32_t)atoi(prio_buf));
-        write_str(out, created);
-        write_str(out, deleted[0] ? deleted : "");
+        storage_io_write_u32(out, (uint32_t)id);
+        storage_io_write_str(out, title);
+        storage_io_write_u32(out, (uint32_t)atoi(done_buf));
+        storage_io_write_str(out, due);
+        storage_io_write_u32(out, (uint32_t)atoi(prio_buf));
+        storage_io_write_str(out, created);
+        storage_io_write_str(out, deleted[0] ? deleted : "");
     }
     fclose(in);
     fclose(out);
@@ -276,13 +229,13 @@ static void migrate_contacts_txt_to_bin(const char *path_txt, const char *path_b
         parse_tab_field(&p, deleted, sizeof(deleted));
         int id = atoi(id_buf);
         if (id <= 0) continue;
-        write_u32(out, (uint32_t)id);
-        write_str(out, name);
-        write_str(out, email);
-        write_str(out, phone);
-        write_str(out, notes);
-        write_str(out, created);
-        write_str(out, deleted[0] ? deleted : "");
+        storage_io_write_u32(out, (uint32_t)id);
+        storage_io_write_str(out, name);
+        storage_io_write_str(out, email);
+        storage_io_write_str(out, phone);
+        storage_io_write_str(out, notes);
+        storage_io_write_str(out, created);
+        storage_io_write_str(out, deleted[0] ? deleted : "");
     }
     fclose(in);
     fclose(out);
@@ -308,14 +261,14 @@ static void migrate_events_txt_to_bin(const char *path_txt, const char *path_bin
         parse_tab_field(&p, deleted, sizeof(deleted));
         int id = atoi(id_buf);
         if (id <= 0) continue;
-        write_u32(out, (uint32_t)id);
-        write_str(out, title);
-        write_str(out, desc);
-        write_str(out, start);
-        write_str(out, end);
-        write_u32(out, (uint32_t)atoi(all_buf));
-        write_str(out, created);
-        write_str(out, deleted[0] ? deleted : "");
+        storage_io_write_u32(out, (uint32_t)id);
+        storage_io_write_str(out, title);
+        storage_io_write_str(out, desc);
+        storage_io_write_str(out, start);
+        storage_io_write_str(out, end);
+        storage_io_write_u32(out, (uint32_t)atoi(all_buf));
+        storage_io_write_str(out, created);
+        storage_io_write_str(out, deleted[0] ? deleted : "");
     }
     fclose(in);
     fclose(out);
@@ -338,11 +291,11 @@ static void migrate_facts_txt_to_bin(const char *path_txt, const char *path_bin)
         parse_tab_field(&p, deleted, sizeof(deleted));
         int id = atoi(id_buf);
         if (id <= 0) continue;
-        write_u32(out, (uint32_t)id);
-        write_str(out, key);
-        write_str(out, value);
-        write_str(out, created);
-        write_str(out, deleted[0] ? deleted : "");
+        storage_io_write_u32(out, (uint32_t)id);
+        storage_io_write_str(out, key);
+        storage_io_write_str(out, value);
+        storage_io_write_str(out, created);
+        storage_io_write_str(out, deleted[0] ? deleted : "");
     }
     fclose(in);
     fclose(out);
@@ -376,30 +329,30 @@ static int next_id(const char *base) {
         /* Scan for max id - we need to read records. For notes: id is first 4 bytes. */
         for (;;) {
             uint32_t id;
-            if (!read_u32(f, &id)) break;
+            if (!storage_io_read_u32(f, &id)) break;
             if ((int)id > max) max = (int)id;
             /* Skip rest of record - depends on entity type. Use a generic skip. */
             if (strstr(base, "notes") != NULL) {
-                if (!skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f)) break;
+                if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
             } else if (strstr(base, "tasks") != NULL) {
-                if (!skip_str(f)) break;
+                if (!storage_io_skip_str(f)) break;
                 if (fseek(f, 4, SEEK_CUR) != 0) break;  /* done */
-                if (!skip_str(f)) break;
+                if (!storage_io_skip_str(f)) break;
                 if (fseek(f, 4, SEEK_CUR) != 0) break;  /* priority */
-                if (!skip_str(f) || !skip_str(f)) break;
+                if (!storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
             } else if (strstr(base, "contacts") != NULL) {
-                if (!skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f)) break;
+                if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
             } else if (strstr(base, "events") != NULL) {
-                if (!skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f) || fseek(f, 4, SEEK_CUR) != 0) break;
-                if (!skip_str(f) || !skip_str(f)) break;
+                if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || fseek(f, 4, SEEK_CUR) != 0) break;
+                if (!storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
             } else if (strstr(base, "facts") != NULL) {
-                if (!skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f)) break;
+                if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
             } else if (strstr(base, "finances") != NULL) {
-                if (!skip_str(f) || !skip_str(f)) break;
+                if (!storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
                 if (fseek(f, 8, SEEK_CUR) != 0) break;  /* amount */
-                if (!skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f)) break;
+                if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
             } else if (strstr(base, "documents") != NULL) {
-                if (!skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f)) break;
+                if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
             } else break;
         }
         fclose(f);
@@ -416,10 +369,10 @@ int storage_notes_count(void) {
     if (f) {
         while (1) {
             uint32_t id;
-            if (!read_u32(f, &id)) break;
-            if (!skip_str(f) || !skip_str(f) || !skip_str(f)) break;
+            if (!storage_io_read_u32(f, &id)) break;
+            if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
             uint32_t del_len;
-            if (!read_u32(f, &del_len)) break;
+            if (!storage_io_read_u32(f, &del_len)) break;
             if (del_len == 0) n++;
             else if (fseek(f, (long)del_len, SEEK_CUR) != 0) break;
         }
@@ -440,11 +393,11 @@ int storage_notes_add(const char *title, const char *content) {
     timestamp(ts, sizeof(ts));
     FILE *f = fopen(path, "ab");
     if (!f) return 0;
-    write_u32(f, (uint32_t)id);
-    write_str(f, t);
-    write_str(f, c);
-    write_str(f, ts);
-    write_str(f, "");
+    storage_io_write_u32(f, (uint32_t)id);
+    storage_io_write_str(f, t);
+    storage_io_write_str(f, c);
+    storage_io_write_str(f, ts);
+    storage_io_write_str(f, "");
     fclose(f);
     return id;
 }
@@ -457,12 +410,12 @@ void storage_notes_list(void (*cb)(const VibeNote *, void *), void *ctx) {
     VibeNote n = {0};
     while (1) {
         uint32_t id;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         n.id = (int)id;
-        if (!read_str(f, n.title, sizeof(n.title))) break;
-        if (!read_str(f, n.content, sizeof(n.content))) break;
-        if (!read_str(f, n.created_at, sizeof(n.created_at))) break;
-        if (!read_str(f, n.deleted_at, sizeof(n.deleted_at))) break;
+        if (!storage_io_read_str(f, n.title, sizeof(n.title))) break;
+        if (!storage_io_read_str(f, n.content, sizeof(n.content))) break;
+        if (!storage_io_read_str(f, n.created_at, sizeof(n.created_at))) break;
+        if (!storage_io_read_str(f, n.deleted_at, sizeof(n.deleted_at))) break;
         if (!n.deleted_at[0]) cb(&n, ctx);
     }
     fclose(f);
@@ -491,34 +444,34 @@ static int notes_rewrite(int skip_id, int set_deleted, const char *new_title, co
     int ok = 0;
     while (1) {
         uint32_t id;
-        if (!read_u32(in, &id)) break;
+        if (!storage_io_read_u32(in, &id)) break;
         char title[VIBE_TITLE_MAX], content[VIBE_CONTENT_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-        if (!read_str(in, title, sizeof(title))) break;
-        if (!read_str(in, content, sizeof(content))) break;
-        if (!read_str(in, created, sizeof(created))) break;
-        if (!read_str(in, deleted, sizeof(deleted))) break;
+        if (!storage_io_read_str(in, title, sizeof(title))) break;
+        if (!storage_io_read_str(in, content, sizeof(content))) break;
+        if (!storage_io_read_str(in, created, sizeof(created))) break;
+        if (!storage_io_read_str(in, deleted, sizeof(deleted))) break;
         if ((int)id == skip_id) {
             if (set_deleted) {
                 timestamp(deleted, sizeof(deleted));
-                write_u32(out, id);
-                write_str(out, title);
-                write_str(out, content);
-                write_str(out, created);
-                write_str(out, deleted);
+                storage_io_write_u32(out, id);
+                storage_io_write_str(out, title);
+                storage_io_write_str(out, content);
+                storage_io_write_str(out, created);
+                storage_io_write_str(out, deleted);
             } else if (new_title) {
-                write_u32(out, id);
-                write_str(out, new_title);
-                write_str(out, new_content ? new_content : "");
-                write_str(out, created);
-                write_str(out, "");
+                storage_io_write_u32(out, id);
+                storage_io_write_str(out, new_title);
+                storage_io_write_str(out, new_content ? new_content : "");
+                storage_io_write_str(out, created);
+                storage_io_write_str(out, "");
             }
             ok = 1;
         } else {
-            write_u32(out, id);
-            write_str(out, title);
-            write_str(out, content);
-            write_str(out, created);
-            write_str(out, deleted);
+            storage_io_write_u32(out, id);
+            storage_io_write_str(out, title);
+            storage_io_write_str(out, content);
+            storage_io_write_str(out, created);
+            storage_io_write_str(out, deleted);
         }
     }
     fclose(in);
@@ -548,14 +501,14 @@ int storage_tasks_count(void) {
     if (f) {
         while (1) {
             uint32_t id;
-            if (!read_u32(f, &id)) break;
-            if (!skip_str(f)) break;
+            if (!storage_io_read_u32(f, &id)) break;
+            if (!storage_io_skip_str(f)) break;
             if (fseek(f, 4, SEEK_CUR) != 0) break; /* done */
-            if (!skip_str(f)) break;
+            if (!storage_io_skip_str(f)) break;
             if (fseek(f, 4, SEEK_CUR) != 0) break;
-            if (!skip_str(f)) break;
+            if (!storage_io_skip_str(f)) break;
             uint32_t del_len;
-            if (!read_u32(f, &del_len)) break;
+            if (!storage_io_read_u32(f, &del_len)) break;
             if (del_len == 0) n++;
             else if (fseek(f, (long)del_len, SEEK_CUR) != 0) break;
         }
@@ -575,13 +528,13 @@ int storage_tasks_add(const char *title, const char *due_date, int priority) {
     timestamp(ts, sizeof(ts));
     FILE *f = fopen(path, "ab");
     if (!f) return 0;
-    write_u32(f, (uint32_t)id);
-    write_str(f, t);
-    write_u32(f, 0);
-    write_str(f, due_date ? due_date : "");
-    write_u32(f, (uint32_t)priority);
-    write_str(f, ts);
-    write_str(f, "");
+    storage_io_write_u32(f, (uint32_t)id);
+    storage_io_write_str(f, t);
+    storage_io_write_u32(f, 0);
+    storage_io_write_str(f, due_date ? due_date : "");
+    storage_io_write_u32(f, (uint32_t)priority);
+    storage_io_write_str(f, ts);
+    storage_io_write_str(f, "");
     fclose(f);
     return id;
 }
@@ -594,16 +547,16 @@ void storage_tasks_list(void (*cb)(const VibeTask *, void *), void *ctx) {
     VibeTask t = {0};
     while (1) {
         uint32_t id, done, prio;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         t.id = (int)id;
-        if (!read_str(f, t.title, sizeof(t.title))) break;
-        if (!read_u32(f, &done)) break;
+        if (!storage_io_read_str(f, t.title, sizeof(t.title))) break;
+        if (!storage_io_read_u32(f, &done)) break;
         t.done = (int)done;
-        if (!read_str(f, t.due_date, sizeof(t.due_date))) break;
-        if (!read_u32(f, &prio)) break;
+        if (!storage_io_read_str(f, t.due_date, sizeof(t.due_date))) break;
+        if (!storage_io_read_u32(f, &prio)) break;
         t.priority = (int)prio;
-        if (!read_str(f, t.created_at, sizeof(t.created_at))) break;
-        if (!read_str(f, t.deleted_at, sizeof(t.deleted_at))) break;
+        if (!storage_io_read_str(f, t.created_at, sizeof(t.created_at))) break;
+        if (!storage_io_read_str(f, t.deleted_at, sizeof(t.deleted_at))) break;
         if (!t.deleted_at[0]) cb(&t, ctx);
     }
     fclose(f);
@@ -633,42 +586,42 @@ static int tasks_rewrite(int skip_id, int set_done, int set_deleted,
     int ok = 0;
     while (1) {
         uint32_t id, done, prio;
-        if (!read_u32(in, &id)) break;
+        if (!storage_io_read_u32(in, &id)) break;
         char title[VIBE_TITLE_MAX], due[VIBE_DATETIME_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-        if (!read_str(in, title, sizeof(title))) break;
-        if (!read_u32(in, &done)) break;
-        if (!read_str(in, due, sizeof(due))) break;
-        if (!read_u32(in, &prio)) break;
-        if (!read_str(in, created, sizeof(created))) break;
-        if (!read_str(in, deleted, sizeof(deleted))) break;
+        if (!storage_io_read_str(in, title, sizeof(title))) break;
+        if (!storage_io_read_u32(in, &done)) break;
+        if (!storage_io_read_str(in, due, sizeof(due))) break;
+        if (!storage_io_read_u32(in, &prio)) break;
+        if (!storage_io_read_str(in, created, sizeof(created))) break;
+        if (!storage_io_read_str(in, deleted, sizeof(deleted))) break;
         if ((int)id == skip_id) {
             if (set_deleted) {
                 timestamp(deleted, sizeof(deleted));
-                write_u32(out, id);
-                write_str(out, title);
-                write_u32(out, (uint32_t)done);
-                write_str(out, due);
-                write_u32(out, prio);
-                write_str(out, created);
-                write_str(out, deleted);
+                storage_io_write_u32(out, id);
+                storage_io_write_str(out, title);
+                storage_io_write_u32(out, (uint32_t)done);
+                storage_io_write_str(out, due);
+                storage_io_write_u32(out, prio);
+                storage_io_write_str(out, created);
+                storage_io_write_str(out, deleted);
             } else if (new_title) {
-                write_u32(out, id);
-                write_str(out, new_title);
-                write_u32(out, (uint32_t)set_done);
-                write_str(out, new_due ? new_due : "");
-                write_u32(out, (uint32_t)new_prio);
-                write_str(out, created);
-                write_str(out, "");
+                storage_io_write_u32(out, id);
+                storage_io_write_str(out, new_title);
+                storage_io_write_u32(out, (uint32_t)set_done);
+                storage_io_write_str(out, new_due ? new_due : "");
+                storage_io_write_u32(out, (uint32_t)new_prio);
+                storage_io_write_str(out, created);
+                storage_io_write_str(out, "");
             }
             ok = 1;
         } else {
-            write_u32(out, id);
-            write_str(out, title);
-            write_u32(out, (uint32_t)done);
-            write_str(out, due);
-            write_u32(out, prio);
-            write_str(out, created);
-            write_str(out, deleted);
+            storage_io_write_u32(out, id);
+            storage_io_write_str(out, title);
+            storage_io_write_u32(out, (uint32_t)done);
+            storage_io_write_str(out, due);
+            storage_io_write_u32(out, prio);
+            storage_io_write_str(out, created);
+            storage_io_write_str(out, deleted);
         }
     }
     fclose(in);
@@ -700,10 +653,10 @@ int storage_contacts_count(void) {
     if (f) {
         while (1) {
             uint32_t id;
-            if (!read_u32(f, &id)) break;
-            for (int i = 0; i < 5; i++) if (!skip_str(f)) goto contacts_count_done; /* name, email, phone, notes, created */
+            if (!storage_io_read_u32(f, &id)) break;
+            for (int i = 0; i < 5; i++) if (!storage_io_skip_str(f)) goto contacts_count_done; /* name, email, phone, notes, created */
             uint32_t del_len;
-            if (!read_u32(f, &del_len)) break;
+            if (!storage_io_read_u32(f, &del_len)) break;
             if (del_len == 0) n++;
             else if (fseek(f, (long)del_len, SEEK_CUR) != 0) break;
         }
@@ -727,13 +680,13 @@ int storage_contacts_add(const char *name, const char *email, const char *phone,
     timestamp(ts, sizeof(ts));
     FILE *f = fopen(path, "ab");
     if (!f) return 0;
-    write_u32(f, (uint32_t)id);
-    write_str(f, n);
-    write_str(f, e);
-    write_str(f, p);
-    write_str(f, no);
-    write_str(f, ts);
-    write_str(f, "");
+    storage_io_write_u32(f, (uint32_t)id);
+    storage_io_write_str(f, n);
+    storage_io_write_str(f, e);
+    storage_io_write_str(f, p);
+    storage_io_write_str(f, no);
+    storage_io_write_str(f, ts);
+    storage_io_write_str(f, "");
     fclose(f);
     return id;
 }
@@ -746,14 +699,14 @@ void storage_contacts_list(void (*cb)(const VibeContact *, void *), void *ctx) {
     VibeContact c = {0};
     while (1) {
         uint32_t id;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         c.id = (int)id;
-        if (!read_str(f, c.name, sizeof(c.name))) break;
-        if (!read_str(f, c.email, sizeof(c.email))) break;
-        if (!read_str(f, c.phone, sizeof(c.phone))) break;
-        if (!read_str(f, c.notes, sizeof(c.notes))) break;
-        if (!read_str(f, c.created_at, sizeof(c.created_at))) break;
-        if (!read_str(f, c.deleted_at, sizeof(c.deleted_at))) break;
+        if (!storage_io_read_str(f, c.name, sizeof(c.name))) break;
+        if (!storage_io_read_str(f, c.email, sizeof(c.email))) break;
+        if (!storage_io_read_str(f, c.phone, sizeof(c.phone))) break;
+        if (!storage_io_read_str(f, c.notes, sizeof(c.notes))) break;
+        if (!storage_io_read_str(f, c.created_at, sizeof(c.created_at))) break;
+        if (!storage_io_read_str(f, c.deleted_at, sizeof(c.deleted_at))) break;
         if (!c.deleted_at[0]) cb(&c, ctx);
     }
     fclose(f);
@@ -783,42 +736,42 @@ static int contacts_rewrite(int skip_id, int set_deleted,
     int ok = 0;
     while (1) {
         uint32_t id;
-        if (!read_u32(in, &id)) break;
+        if (!storage_io_read_u32(in, &id)) break;
         char name[VIBE_NAME_MAX], email[VIBE_EMAIL_MAX], phone[VIBE_PHONE_MAX], notes[VIBE_CONTENT_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-        if (!read_str(in, name, sizeof(name))) break;
-        if (!read_str(in, email, sizeof(email))) break;
-        if (!read_str(in, phone, sizeof(phone))) break;
-        if (!read_str(in, notes, sizeof(notes))) break;
-        if (!read_str(in, created, sizeof(created))) break;
-        if (!read_str(in, deleted, sizeof(deleted))) break;
+        if (!storage_io_read_str(in, name, sizeof(name))) break;
+        if (!storage_io_read_str(in, email, sizeof(email))) break;
+        if (!storage_io_read_str(in, phone, sizeof(phone))) break;
+        if (!storage_io_read_str(in, notes, sizeof(notes))) break;
+        if (!storage_io_read_str(in, created, sizeof(created))) break;
+        if (!storage_io_read_str(in, deleted, sizeof(deleted))) break;
         if ((int)id == skip_id) {
             if (set_deleted) {
                 timestamp(deleted, sizeof(deleted));
-                write_u32(out, id);
-                write_str(out, name);
-                write_str(out, email);
-                write_str(out, phone);
-                write_str(out, notes);
-                write_str(out, created);
-                write_str(out, deleted);
+                storage_io_write_u32(out, id);
+                storage_io_write_str(out, name);
+                storage_io_write_str(out, email);
+                storage_io_write_str(out, phone);
+                storage_io_write_str(out, notes);
+                storage_io_write_str(out, created);
+                storage_io_write_str(out, deleted);
             } else if (new_name) {
-                write_u32(out, id);
-                write_str(out, new_name);
-                write_str(out, new_email ? new_email : "");
-                write_str(out, new_phone ? new_phone : "");
-                write_str(out, new_notes ? new_notes : notes);
-                write_str(out, created);
-                write_str(out, "");
+                storage_io_write_u32(out, id);
+                storage_io_write_str(out, new_name);
+                storage_io_write_str(out, new_email ? new_email : "");
+                storage_io_write_str(out, new_phone ? new_phone : "");
+                storage_io_write_str(out, new_notes ? new_notes : notes);
+                storage_io_write_str(out, created);
+                storage_io_write_str(out, "");
             }
             ok = 1;
         } else {
-            write_u32(out, id);
-            write_str(out, name);
-            write_str(out, email);
-            write_str(out, phone);
-            write_str(out, notes);
-            write_str(out, created);
-            write_str(out, deleted);
+            storage_io_write_u32(out, id);
+            storage_io_write_str(out, name);
+            storage_io_write_str(out, email);
+            storage_io_write_str(out, phone);
+            storage_io_write_str(out, notes);
+            storage_io_write_str(out, created);
+            storage_io_write_str(out, deleted);
         }
     }
     fclose(in);
@@ -850,12 +803,12 @@ int storage_events_count(void) {
     if (f) {
         while (1) {
             uint32_t id;
-            if (!read_u32(f, &id)) break;
-            if (!skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f)) break;
+            if (!storage_io_read_u32(f, &id)) break;
+            if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
             if (fseek(f, 4, SEEK_CUR) != 0) break;
-            if (!skip_str(f)) break;
+            if (!storage_io_skip_str(f)) break;
             uint32_t del_len;
-            if (!read_u32(f, &del_len)) break;
+            if (!storage_io_read_u32(f, &del_len)) break;
             if (del_len == 0) n++;
             else if (fseek(f, (long)del_len, SEEK_CUR) != 0) break;
         }
@@ -876,14 +829,14 @@ int storage_events_add(const char *title, const char *desc, const char *start_at
     timestamp(ts, sizeof(ts));
     FILE *f = fopen(path, "ab");
     if (!f) return 0;
-    write_u32(f, (uint32_t)id);
-    write_str(f, t);
-    write_str(f, "");
-    write_str(f, start_at ? start_at : "");
-    write_str(f, end_at ? end_at : "");
-    write_u32(f, (uint32_t)all_day);
-    write_str(f, ts);
-    write_str(f, "");
+    storage_io_write_u32(f, (uint32_t)id);
+    storage_io_write_str(f, t);
+    storage_io_write_str(f, "");
+    storage_io_write_str(f, start_at ? start_at : "");
+    storage_io_write_str(f, end_at ? end_at : "");
+    storage_io_write_u32(f, (uint32_t)all_day);
+    storage_io_write_str(f, ts);
+    storage_io_write_str(f, "");
     fclose(f);
     return id;
 }
@@ -896,16 +849,16 @@ void storage_events_list(void (*cb)(const VibeCalendarEvent *, void *), void *ct
     VibeCalendarEvent e = {0};
     while (1) {
         uint32_t id, all_day;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         e.id = (int)id;
-        if (!read_str(f, e.title, sizeof(e.title))) break;
-        if (!read_str(f, e.description, sizeof(e.description))) break;
-        if (!read_str(f, e.start_at, sizeof(e.start_at))) break;
-        if (!read_str(f, e.end_at, sizeof(e.end_at))) break;
-        if (!read_u32(f, &all_day)) break;
+        if (!storage_io_read_str(f, e.title, sizeof(e.title))) break;
+        if (!storage_io_read_str(f, e.description, sizeof(e.description))) break;
+        if (!storage_io_read_str(f, e.start_at, sizeof(e.start_at))) break;
+        if (!storage_io_read_str(f, e.end_at, sizeof(e.end_at))) break;
+        if (!storage_io_read_u32(f, &all_day)) break;
         e.all_day = (int)all_day;
-        if (!read_str(f, e.created_at, sizeof(e.created_at))) break;
-        if (!read_str(f, e.deleted_at, sizeof(e.deleted_at))) break;
+        if (!storage_io_read_str(f, e.created_at, sizeof(e.created_at))) break;
+        if (!storage_io_read_str(f, e.deleted_at, sizeof(e.deleted_at))) break;
         if (!e.deleted_at[0]) cb(&e, ctx);
     }
     fclose(f);
@@ -935,46 +888,46 @@ static int events_rewrite(int skip_id, int set_deleted,
     int ok = 0;
     while (1) {
         uint32_t id, all_day;
-        if (!read_u32(in, &id)) break;
+        if (!storage_io_read_u32(in, &id)) break;
         char title[VIBE_TITLE_MAX], desc[VIBE_CONTENT_MAX], start[VIBE_DATETIME_MAX], end[VIBE_DATETIME_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-        if (!read_str(in, title, sizeof(title))) break;
-        if (!read_str(in, desc, sizeof(desc))) break;
-        if (!read_str(in, start, sizeof(start))) break;
-        if (!read_str(in, end, sizeof(end))) break;
-        if (!read_u32(in, &all_day)) break;
-        if (!read_str(in, created, sizeof(created))) break;
-        if (!read_str(in, deleted, sizeof(deleted))) break;
+        if (!storage_io_read_str(in, title, sizeof(title))) break;
+        if (!storage_io_read_str(in, desc, sizeof(desc))) break;
+        if (!storage_io_read_str(in, start, sizeof(start))) break;
+        if (!storage_io_read_str(in, end, sizeof(end))) break;
+        if (!storage_io_read_u32(in, &all_day)) break;
+        if (!storage_io_read_str(in, created, sizeof(created))) break;
+        if (!storage_io_read_str(in, deleted, sizeof(deleted))) break;
         if ((int)id == skip_id) {
             if (set_deleted) {
                 timestamp(deleted, sizeof(deleted));
-                write_u32(out, id);
-                write_str(out, title);
-                write_str(out, desc);
-                write_str(out, start);
-                write_str(out, end);
-                write_u32(out, (uint32_t)all_day);
-                write_str(out, created);
-                write_str(out, deleted);
+                storage_io_write_u32(out, id);
+                storage_io_write_str(out, title);
+                storage_io_write_str(out, desc);
+                storage_io_write_str(out, start);
+                storage_io_write_str(out, end);
+                storage_io_write_u32(out, (uint32_t)all_day);
+                storage_io_write_str(out, created);
+                storage_io_write_str(out, deleted);
             } else if (new_title) {
-                write_u32(out, id);
-                write_str(out, new_title);
-                write_str(out, new_desc ? new_desc : "");
-                write_str(out, new_start ? new_start : "");
-                write_str(out, new_end ? new_end : "");
-                write_u32(out, (uint32_t)new_all_day);
-                write_str(out, created);
-                write_str(out, "");
+                storage_io_write_u32(out, id);
+                storage_io_write_str(out, new_title);
+                storage_io_write_str(out, new_desc ? new_desc : "");
+                storage_io_write_str(out, new_start ? new_start : "");
+                storage_io_write_str(out, new_end ? new_end : "");
+                storage_io_write_u32(out, (uint32_t)new_all_day);
+                storage_io_write_str(out, created);
+                storage_io_write_str(out, "");
             }
             ok = 1;
         } else {
-            write_u32(out, id);
-            write_str(out, title);
-            write_str(out, desc);
-            write_str(out, start);
-            write_str(out, end);
-            write_u32(out, all_day);
-            write_str(out, created);
-            write_str(out, deleted);
+            storage_io_write_u32(out, id);
+            storage_io_write_str(out, title);
+            storage_io_write_str(out, desc);
+            storage_io_write_str(out, start);
+            storage_io_write_str(out, end);
+            storage_io_write_u32(out, all_day);
+            storage_io_write_str(out, created);
+            storage_io_write_str(out, deleted);
         }
     }
     fclose(in);
@@ -1006,10 +959,10 @@ int storage_facts_count(void) {
     if (f) {
         while (1) {
             uint32_t id;
-            if (!read_u32(f, &id)) break;
-            if (!skip_str(f) || !skip_str(f) || !skip_str(f)) break;
+            if (!storage_io_read_u32(f, &id)) break;
+            if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
             uint32_t del_len;
-            if (!read_u32(f, &del_len)) break;
+            if (!storage_io_read_u32(f, &del_len)) break;
             if (del_len == 0) n++;
             else if (fseek(f, (long)del_len, SEEK_CUR) != 0) break;
         }
@@ -1031,11 +984,11 @@ int storage_facts_add(const char *key, const char *value) {
     timestamp(ts, sizeof(ts));
     FILE *f = fopen(path, "ab");
     if (!f) return 0;
-    write_u32(f, (uint32_t)id);
-    write_str(f, k);
-    write_str(f, v);
-    write_str(f, ts);
-    write_str(f, "");
+    storage_io_write_u32(f, (uint32_t)id);
+    storage_io_write_str(f, k);
+    storage_io_write_str(f, v);
+    storage_io_write_str(f, ts);
+    storage_io_write_str(f, "");
     fclose(f);
     return id;
 }
@@ -1048,12 +1001,12 @@ void storage_facts_list(void (*cb)(const VibeFact *, void *), void *ctx) {
     VibeFact fact = {0};
     while (1) {
         uint32_t id;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         fact.id = (int)id;
-        if (!read_str(f, fact.key, sizeof(fact.key))) break;
-        if (!read_str(f, fact.value, sizeof(fact.value))) break;
-        if (!read_str(f, fact.created_at, sizeof(fact.created_at))) break;
-        if (!read_str(f, fact.deleted_at, sizeof(fact.deleted_at))) break;
+        if (!storage_io_read_str(f, fact.key, sizeof(fact.key))) break;
+        if (!storage_io_read_str(f, fact.value, sizeof(fact.value))) break;
+        if (!storage_io_read_str(f, fact.created_at, sizeof(fact.created_at))) break;
+        if (!storage_io_read_str(f, fact.deleted_at, sizeof(fact.deleted_at))) break;
         if (!fact.deleted_at[0]) cb(&fact, ctx);
     }
     fclose(f);
@@ -1083,34 +1036,34 @@ static int facts_rewrite(int skip_id, int set_deleted,
     int ok = 0;
     while (1) {
         uint32_t id;
-        if (!read_u32(in, &id)) break;
+        if (!storage_io_read_u32(in, &id)) break;
         char key[VIBE_TITLE_MAX], value[VIBE_CONTENT_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-        if (!read_str(in, key, sizeof(key))) break;
-        if (!read_str(in, value, sizeof(value))) break;
-        if (!read_str(in, created, sizeof(created))) break;
-        if (!read_str(in, deleted, sizeof(deleted))) break;
+        if (!storage_io_read_str(in, key, sizeof(key))) break;
+        if (!storage_io_read_str(in, value, sizeof(value))) break;
+        if (!storage_io_read_str(in, created, sizeof(created))) break;
+        if (!storage_io_read_str(in, deleted, sizeof(deleted))) break;
         if ((int)id == skip_id) {
             if (set_deleted) {
                 timestamp(deleted, sizeof(deleted));
-                write_u32(out, id);
-                write_str(out, key);
-                write_str(out, value);
-                write_str(out, created);
-                write_str(out, deleted);
+                storage_io_write_u32(out, id);
+                storage_io_write_str(out, key);
+                storage_io_write_str(out, value);
+                storage_io_write_str(out, created);
+                storage_io_write_str(out, deleted);
             } else if (new_key) {
-                write_u32(out, id);
-                write_str(out, new_key);
-                write_str(out, new_value ? new_value : "");
-                write_str(out, created);
-                write_str(out, "");
+                storage_io_write_u32(out, id);
+                storage_io_write_str(out, new_key);
+                storage_io_write_str(out, new_value ? new_value : "");
+                storage_io_write_str(out, created);
+                storage_io_write_str(out, "");
             }
             ok = 1;
         } else {
-            write_u32(out, id);
-            write_str(out, key);
-            write_str(out, value);
-            write_str(out, created);
-            write_str(out, deleted);
+            storage_io_write_u32(out, id);
+            storage_io_write_str(out, key);
+            storage_io_write_str(out, value);
+            storage_io_write_str(out, created);
+            storage_io_write_str(out, deleted);
         }
     }
     fclose(in);
@@ -1150,10 +1103,10 @@ static int count_deleted_in_file(const char *base, int (*read_and_check)(FILE*, 
 
 static int notes_read_deleted(FILE *f, int *has_deleted) {
     uint32_t id;
-    if (!read_u32(f, &id)) return 0;
-    if (!skip_str(f) || !skip_str(f) || !skip_str(f)) return 0;
+    if (!storage_io_read_u32(f, &id)) return 0;
+    if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) return 0;
     uint32_t del_len;
-    if (!read_u32(f, &del_len)) return 0;
+    if (!storage_io_read_u32(f, &del_len)) return 0;
     *has_deleted = (del_len > 0);
     if (del_len > 0 && fseek(f, (long)del_len, SEEK_CUR) != 0) return 0;
     return 1;
@@ -1161,14 +1114,14 @@ static int notes_read_deleted(FILE *f, int *has_deleted) {
 
 static int tasks_read_deleted(FILE *f, int *has_deleted) {
     uint32_t id;
-    if (!read_u32(f, &id)) return 0;
-    if (!skip_str(f)) return 0;
+    if (!storage_io_read_u32(f, &id)) return 0;
+    if (!storage_io_skip_str(f)) return 0;
     if (fseek(f, 4, SEEK_CUR) != 0) return 0;
-    if (!skip_str(f)) return 0;
+    if (!storage_io_skip_str(f)) return 0;
     if (fseek(f, 4, SEEK_CUR) != 0) return 0;
-    if (!skip_str(f)) return 0;
+    if (!storage_io_skip_str(f)) return 0;
     uint32_t del_len;
-    if (!read_u32(f, &del_len)) return 0;
+    if (!storage_io_read_u32(f, &del_len)) return 0;
     *has_deleted = (del_len > 0);
     if (del_len > 0 && fseek(f, (long)del_len, SEEK_CUR) != 0) return 0;
     return 1;
@@ -1176,10 +1129,10 @@ static int tasks_read_deleted(FILE *f, int *has_deleted) {
 
 static int contacts_read_deleted(FILE *f, int *has_deleted) {
     uint32_t id;
-    if (!read_u32(f, &id)) return 0;
-    for (int i = 0; i < 5; i++) if (!skip_str(f)) return 0;
+    if (!storage_io_read_u32(f, &id)) return 0;
+    for (int i = 0; i < 5; i++) if (!storage_io_skip_str(f)) return 0;
     uint32_t del_len;
-    if (!read_u32(f, &del_len)) return 0;
+    if (!storage_io_read_u32(f, &del_len)) return 0;
     *has_deleted = (del_len > 0);
     if (del_len > 0 && fseek(f, (long)del_len, SEEK_CUR) != 0) return 0;
     return 1;
@@ -1187,12 +1140,12 @@ static int contacts_read_deleted(FILE *f, int *has_deleted) {
 
 static int events_read_deleted(FILE *f, int *has_deleted) {
     uint32_t id;
-    if (!read_u32(f, &id)) return 0;
-    if (!skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f)) return 0;
+    if (!storage_io_read_u32(f, &id)) return 0;
+    if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) return 0;
     if (fseek(f, 4, SEEK_CUR) != 0) return 0;
-    if (!skip_str(f)) return 0;
+    if (!storage_io_skip_str(f)) return 0;
     uint32_t del_len;
-    if (!read_u32(f, &del_len)) return 0;
+    if (!storage_io_read_u32(f, &del_len)) return 0;
     *has_deleted = (del_len > 0);
     if (del_len > 0 && fseek(f, (long)del_len, SEEK_CUR) != 0) return 0;
     return 1;
@@ -1200,10 +1153,10 @@ static int events_read_deleted(FILE *f, int *has_deleted) {
 
 static int facts_read_deleted(FILE *f, int *has_deleted) {
     uint32_t id;
-    if (!read_u32(f, &id)) return 0;
-    if (!skip_str(f) || !skip_str(f) || !skip_str(f)) return 0;
+    if (!storage_io_read_u32(f, &id)) return 0;
+    if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) return 0;
     uint32_t del_len;
-    if (!read_u32(f, &del_len)) return 0;
+    if (!storage_io_read_u32(f, &del_len)) return 0;
     *has_deleted = (del_len > 0);
     if (del_len > 0 && fseek(f, (long)del_len, SEEK_CUR) != 0) return 0;
     return 1;
@@ -1211,12 +1164,12 @@ static int facts_read_deleted(FILE *f, int *has_deleted) {
 
 static int finances_read_deleted(FILE *f, int *has_deleted) {
     uint32_t id;
-    if (!read_u32(f, &id)) return 0;
-    if (!skip_str(f) || !skip_str(f)) return 0;
+    if (!storage_io_read_u32(f, &id)) return 0;
+    if (!storage_io_skip_str(f) || !storage_io_skip_str(f)) return 0;
     if (fseek(f, 8, SEEK_CUR) != 0) return 0;
-    if (!skip_str(f) || !skip_str(f) || !skip_str(f)) return 0;
+    if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) return 0;  /* cat, acc, notes, created_at */
     uint32_t del_len;
-    if (!read_u32(f, &del_len)) return 0;
+    if (!storage_io_read_u32(f, &del_len)) return 0;
     *has_deleted = (del_len > 0);
     if (del_len > 0 && fseek(f, (long)del_len, SEEK_CUR) != 0) return 0;
     return 1;
@@ -1224,10 +1177,10 @@ static int finances_read_deleted(FILE *f, int *has_deleted) {
 
 static int documents_read_deleted(FILE *f, int *has_deleted) {
     uint32_t id;
-    if (!read_u32(f, &id)) return 0;
-    if (!skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f)) return 0;
+    if (!storage_io_read_u32(f, &id)) return 0;
+    if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) return 0;
     uint32_t del_len;
-    if (!read_u32(f, &del_len)) return 0;
+    if (!storage_io_read_u32(f, &del_len)) return 0;
     *has_deleted = (del_len > 0);
     if (del_len > 0 && fseek(f, (long)del_len, SEEK_CUR) != 0) return 0;
     return 1;
@@ -1251,12 +1204,12 @@ static void trash_list_notes(void (*cb)(int, int, const char*, void*), void *ctx
     if (!f) return;
     while (1) {
         uint32_t id;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         char title[VIBE_TITLE_MAX];
-        if (!read_str(f, title, sizeof(title))) break;
-        if (!skip_str(f) || !skip_str(f)) break;
+        if (!storage_io_read_str(f, title, sizeof(title))) break;
+        if (!storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
         uint32_t del_len;
-        if (!read_u32(f, &del_len)) break;
+        if (!storage_io_read_u32(f, &del_len)) break;
         if (del_len > 0) cb(0, (int)id, title, ctx);
         else if (fseek(f, 0, SEEK_CUR) != 0) break;
     }
@@ -1270,15 +1223,15 @@ static void trash_list_tasks(void (*cb)(int, int, const char*, void*), void *ctx
     if (!f) return;
     while (1) {
         uint32_t id;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         char title[VIBE_TITLE_MAX];
-        if (!read_str(f, title, sizeof(title))) break;
+        if (!storage_io_read_str(f, title, sizeof(title))) break;
         if (fseek(f, 4, SEEK_CUR) != 0) break;  /* done */
-        if (!skip_str(f)) break;  /* due */
+        if (!storage_io_skip_str(f)) break;  /* due */
         if (fseek(f, 4, SEEK_CUR) != 0) break;  /* priority */
-        if (!skip_str(f)) break;  /* created */
+        if (!storage_io_skip_str(f)) break;  /* created */
         uint32_t del_len;
-        if (!read_u32(f, &del_len)) break;
+        if (!storage_io_read_u32(f, &del_len)) break;
         if (del_len > 0) cb(1, (int)id, title, ctx);
         else if (fseek(f, 0, SEEK_CUR) != 0) break;
     }
@@ -1292,12 +1245,12 @@ static void trash_list_contacts(void (*cb)(int, int, const char*, void*), void *
     if (!f) return;
     while (1) {
         uint32_t id;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         char name[VIBE_NAME_MAX];
-        if (!read_str(f, name, sizeof(name))) break;
-        if (!skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f)) break;
+        if (!storage_io_read_str(f, name, sizeof(name))) break;
+        if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
         uint32_t del_len;
-        if (!read_u32(f, &del_len)) break;
+        if (!storage_io_read_u32(f, &del_len)) break;
         if (del_len > 0) cb(2, (int)id, name, ctx);
     }
     fclose(f);
@@ -1310,14 +1263,14 @@ static void trash_list_events(void (*cb)(int, int, const char*, void*), void *ct
     if (!f) return;
     while (1) {
         uint32_t id;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         char title[VIBE_TITLE_MAX];
-        if (!read_str(f, title, sizeof(title))) break;
-        if (!skip_str(f) || !skip_str(f) || !skip_str(f)) break;
+        if (!storage_io_read_str(f, title, sizeof(title))) break;
+        if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
         if (fseek(f, 4, SEEK_CUR) != 0) break;
-        if (!skip_str(f)) break;
+        if (!storage_io_skip_str(f)) break;
         uint32_t del_len;
-        if (!read_u32(f, &del_len)) break;
+        if (!storage_io_read_u32(f, &del_len)) break;
         if (del_len > 0) cb(3, (int)id, title, ctx);
     }
     fclose(f);
@@ -1330,12 +1283,12 @@ static void trash_list_facts(void (*cb)(int, int, const char*, void*), void *ctx
     if (!f) return;
     while (1) {
         uint32_t id;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         char key[VIBE_TITLE_MAX];
-        if (!read_str(f, key, sizeof(key))) break;
-        if (!skip_str(f) || !skip_str(f)) break;
+        if (!storage_io_read_str(f, key, sizeof(key))) break;
+        if (!storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
         uint32_t del_len;
-        if (!read_u32(f, &del_len)) break;
+        if (!storage_io_read_u32(f, &del_len)) break;
         if (del_len > 0) cb(4, (int)id, key, ctx);
     }
     fclose(f);
@@ -1348,15 +1301,15 @@ static void trash_list_finances(void (*cb)(int, int, const char*, void*), void *
     if (!f) return;
     while (1) {
         uint32_t id;
-        if (!read_u32(f, &id)) break;
-        if (!skip_str(f)) break;  /* date */
+        if (!storage_io_read_u32(f, &id)) break;
+        if (!storage_io_skip_str(f)) break;  /* date */
         char desc[VIBE_TITLE_MAX];
-        if (!read_str(f, desc, sizeof(desc))) break;
+        if (!storage_io_read_str(f, desc, sizeof(desc))) break;
         if (fseek(f, 8, SEEK_CUR) != 0) break;  /* amount */
-        if (!skip_str(f) || !skip_str(f) || !skip_str(f)) break;
-        if (!skip_str(f)) break;  /* created_at */
+        if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
+        if (!storage_io_skip_str(f)) break;  /* created_at */
         uint32_t del_len;
-        if (!read_u32(f, &del_len)) break;
+        if (!storage_io_read_u32(f, &del_len)) break;
         if (del_len > 0) cb(5, (int)id, desc, ctx);
     }
     fclose(f);
@@ -1369,12 +1322,12 @@ static void trash_list_documents(void (*cb)(int, int, const char*, void*), void 
     if (!f) return;
     while (1) {
         uint32_t id;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         char title[VIBE_TITLE_MAX];
-        if (!read_str(f, title, sizeof(title))) break;
-        if (!skip_str(f) || !skip_str(f) || !skip_str(f)) break;  /* template, content, created */
+        if (!storage_io_read_str(f, title, sizeof(title))) break;
+        if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;  /* template, content, created */
         uint32_t del_len;
-        if (!read_u32(f, &del_len)) break;
+        if (!storage_io_read_u32(f, &del_len)) break;
         if (del_len > 0) cb(6, (int)id, title, ctx);
     }
     fclose(f);
@@ -1401,16 +1354,16 @@ int storage_restore(int entity_type, int id) {
             if (!f) return 0;
             while (1) {
                 uint32_t rid;
-                if (!read_u32(f, &rid)) break;
+                if (!storage_io_read_u32(f, &rid)) break;
                 if ((int)rid != id) {
-                    if (!skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f)) break;
+                    if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
                     continue;
                 }
                 char title[VIBE_TITLE_MAX], content[VIBE_CONTENT_MAX], created[VIBE_DATETIME_MAX];
-                if (!read_str(f, title, sizeof(title))) { fclose(f); return 0; }
-                if (!read_str(f, content, sizeof(content))) { fclose(f); return 0; }
-                if (!read_str(f, created, sizeof(created))) { fclose(f); return 0; }
-                skip_str(f);
+                if (!storage_io_read_str(f, title, sizeof(title))) { fclose(f); return 0; }
+                if (!storage_io_read_str(f, content, sizeof(content))) { fclose(f); return 0; }
+                if (!storage_io_read_str(f, created, sizeof(created))) { fclose(f); return 0; }
+                storage_io_skip_str(f);
                 fclose(f);
                 return notes_rewrite(id, 0, title, content);
             }
@@ -1424,21 +1377,21 @@ int storage_restore(int entity_type, int id) {
             if (!f) return 0;
             while (1) {
                 uint32_t rid, done, prio;
-                if (!read_u32(f, &rid)) break;
+                if (!storage_io_read_u32(f, &rid)) break;
                 if ((int)rid != id) {
-                    if (!skip_str(f)) break;
+                    if (!storage_io_skip_str(f)) break;
                     if (fseek(f, 4, SEEK_CUR) != 0) break;
-                    if (!skip_str(f)) break;
+                    if (!storage_io_skip_str(f)) break;
                     if (fseek(f, 4, SEEK_CUR) != 0) break;
-                    if (!skip_str(f) || !skip_str(f)) break;
+                    if (!storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
                     continue;
                 }
                 char title[VIBE_TITLE_MAX], due[VIBE_DATETIME_MAX];
-                if (!read_str(f, title, sizeof(title))) { fclose(f); return 0; }
-                if (!read_u32(f, &done)) { fclose(f); return 0; }
-                if (!read_str(f, due, sizeof(due))) { fclose(f); return 0; }
-                if (!read_u32(f, &prio)) { fclose(f); return 0; }
-                skip_str(f); skip_str(f);
+                if (!storage_io_read_str(f, title, sizeof(title))) { fclose(f); return 0; }
+                if (!storage_io_read_u32(f, &done)) { fclose(f); return 0; }
+                if (!storage_io_read_str(f, due, sizeof(due))) { fclose(f); return 0; }
+                if (!storage_io_read_u32(f, &prio)) { fclose(f); return 0; }
+                storage_io_skip_str(f); storage_io_skip_str(f);
                 fclose(f);
                 return tasks_rewrite(id, (int)done, 0, title, due, (int)prio);
             }
@@ -1452,17 +1405,17 @@ int storage_restore(int entity_type, int id) {
             if (!f) return 0;
             while (1) {
                 uint32_t rid;
-                if (!read_u32(f, &rid)) break;
+                if (!storage_io_read_u32(f, &rid)) break;
                 if ((int)rid != id) {
-                    for (int i = 0; i < 6; i++) if (!skip_str(f)) goto contacts_restore_done;
+                    for (int i = 0; i < 6; i++) if (!storage_io_skip_str(f)) goto contacts_restore_done;
                     continue;
                 }
                 char name[VIBE_NAME_MAX], email[VIBE_EMAIL_MAX], phone[VIBE_PHONE_MAX], notes[VIBE_CONTENT_MAX];
-                if (!read_str(f, name, sizeof(name))) { fclose(f); return 0; }
-                if (!read_str(f, email, sizeof(email))) { fclose(f); return 0; }
-                if (!read_str(f, phone, sizeof(phone))) { fclose(f); return 0; }
-                if (!read_str(f, notes, sizeof(notes))) { fclose(f); return 0; }
-                skip_str(f); skip_str(f);
+                if (!storage_io_read_str(f, name, sizeof(name))) { fclose(f); return 0; }
+                if (!storage_io_read_str(f, email, sizeof(email))) { fclose(f); return 0; }
+                if (!storage_io_read_str(f, phone, sizeof(phone))) { fclose(f); return 0; }
+                if (!storage_io_read_str(f, notes, sizeof(notes))) { fclose(f); return 0; }
+                storage_io_skip_str(f); storage_io_skip_str(f);
                 fclose(f);
                 return contacts_rewrite(id, 0, name, email, phone, notes);
             }
@@ -1477,20 +1430,20 @@ contacts_restore_done:
             if (!f) return 0;
             while (1) {
                 uint32_t rid, all_day;
-                if (!read_u32(f, &rid)) break;
+                if (!storage_io_read_u32(f, &rid)) break;
                 if ((int)rid != id) {
-                    if (!skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f)) break;
+                    if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
                     if (fseek(f, 4, SEEK_CUR) != 0) break;
-                    if (!skip_str(f) || !skip_str(f)) break;
+                    if (!storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
                     continue;
                 }
                 char title[VIBE_TITLE_MAX], desc[VIBE_CONTENT_MAX], start[VIBE_DATETIME_MAX], end[VIBE_DATETIME_MAX];
-                if (!read_str(f, title, sizeof(title))) { fclose(f); return 0; }
-                if (!read_str(f, desc, sizeof(desc))) { fclose(f); return 0; }
-                if (!read_str(f, start, sizeof(start))) { fclose(f); return 0; }
-                if (!read_str(f, end, sizeof(end))) { fclose(f); return 0; }
-                if (!read_u32(f, &all_day)) { fclose(f); return 0; }
-                skip_str(f); skip_str(f);
+                if (!storage_io_read_str(f, title, sizeof(title))) { fclose(f); return 0; }
+                if (!storage_io_read_str(f, desc, sizeof(desc))) { fclose(f); return 0; }
+                if (!storage_io_read_str(f, start, sizeof(start))) { fclose(f); return 0; }
+                if (!storage_io_read_str(f, end, sizeof(end))) { fclose(f); return 0; }
+                if (!storage_io_read_u32(f, &all_day)) { fclose(f); return 0; }
+                storage_io_skip_str(f); storage_io_skip_str(f);
                 fclose(f);
                 return events_rewrite(id, 0, title, desc, start, end, (int)all_day);
             }
@@ -1504,15 +1457,15 @@ contacts_restore_done:
             if (!f) return 0;
             while (1) {
                 uint32_t rid;
-                if (!read_u32(f, &rid)) break;
+                if (!storage_io_read_u32(f, &rid)) break;
                 if ((int)rid != id) {
-                    if (!skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f)) break;
+                    if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
                     continue;
                 }
                 char key[VIBE_TITLE_MAX], value[VIBE_CONTENT_MAX];
-                if (!read_str(f, key, sizeof(key))) { fclose(f); return 0; }
-                if (!read_str(f, value, sizeof(value))) { fclose(f); return 0; }
-                skip_str(f); skip_str(f);
+                if (!storage_io_read_str(f, key, sizeof(key))) { fclose(f); return 0; }
+                if (!storage_io_read_str(f, value, sizeof(value))) { fclose(f); return 0; }
+                storage_io_skip_str(f); storage_io_skip_str(f);
                 fclose(f);
                 return facts_rewrite(id, 0, key, value);
             }
@@ -1526,22 +1479,22 @@ contacts_restore_done:
             if (!f) return 0;
             while (1) {
                 uint32_t rid;
-                if (!read_u32(f, &rid)) break;
+                if (!storage_io_read_u32(f, &rid)) break;
                 if ((int)rid != id) {
-                    if (!skip_str(f) || !skip_str(f)) break;
+                    if (!storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
                     if (fseek(f, 8, SEEK_CUR) != 0) break;
-                    if (!skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f)) break;
+                    if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
                     continue;
                 }
                 char date[VIBE_DATETIME_MAX], desc[VIBE_TITLE_MAX], cat[VIBE_TITLE_MAX], acc[VIBE_TITLE_MAX], notes[VIBE_CONTENT_MAX];
                 double amt;
-                if (!read_str(f, date, sizeof(date))) { fclose(f); return 0; }
-                if (!read_str(f, desc, sizeof(desc))) { fclose(f); return 0; }
+                if (!storage_io_read_str(f, date, sizeof(date))) { fclose(f); return 0; }
+                if (!storage_io_read_str(f, desc, sizeof(desc))) { fclose(f); return 0; }
                 if (fread(&amt, sizeof(amt), 1, f) != 1) { fclose(f); return 0; }
-                if (!read_str(f, cat, sizeof(cat))) { fclose(f); return 0; }
-                if (!read_str(f, acc, sizeof(acc))) { fclose(f); return 0; }
-                if (!read_str(f, notes, sizeof(notes))) { fclose(f); return 0; }
-                skip_str(f); skip_str(f);
+                if (!storage_io_read_str(f, cat, sizeof(cat))) { fclose(f); return 0; }
+                if (!storage_io_read_str(f, acc, sizeof(acc))) { fclose(f); return 0; }
+                if (!storage_io_read_str(f, notes, sizeof(notes))) { fclose(f); return 0; }
+                storage_io_skip_str(f); storage_io_skip_str(f);
                 fclose(f);
                 return finances_rewrite(id, 0, date, desc, amt, cat, acc, notes);
             }
@@ -1555,16 +1508,16 @@ contacts_restore_done:
             if (!f) return 0;
             while (1) {
                 uint32_t rid;
-                if (!read_u32(f, &rid)) break;
+                if (!storage_io_read_u32(f, &rid)) break;
                 if ((int)rid != id) {
-                    if (!skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f)) break;
+                    if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
                     continue;
                 }
                 char title[VIBE_TITLE_MAX], tmpl[VIBE_TITLE_MAX], content[VIBE_CONTENT_MAX];
-                if (!read_str(f, title, sizeof(title))) { fclose(f); return 0; }
-                if (!read_str(f, tmpl, sizeof(tmpl))) { fclose(f); return 0; }
-                if (!read_str(f, content, sizeof(content))) { fclose(f); return 0; }
-                skip_str(f); skip_str(f);
+                if (!storage_io_read_str(f, title, sizeof(title))) { fclose(f); return 0; }
+                if (!storage_io_read_str(f, tmpl, sizeof(tmpl))) { fclose(f); return 0; }
+                if (!storage_io_read_str(f, content, sizeof(content))) { fclose(f); return 0; }
+                storage_io_skip_str(f); storage_io_skip_str(f);
                 fclose(f);
                 return documents_rewrite(id, 0, title, tmpl, content);
             }
@@ -1584,12 +1537,12 @@ int storage_finances_count(void) {
     if (f) {
         while (1) {
             uint32_t id;
-            if (!read_u32(f, &id)) break;
-            if (!skip_str(f) || !skip_str(f)) break;
+            if (!storage_io_read_u32(f, &id)) break;
+            if (!storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
             if (fseek(f, 8, SEEK_CUR) != 0) break;  /* amount */
-            if (!skip_str(f) || !skip_str(f) || !skip_str(f)) break;
+            if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
             uint32_t del_len;
-            if (!read_u32(f, &del_len)) break;
+            if (!storage_io_read_u32(f, &del_len)) break;
             if (del_len == 0) n++;
             else if (fseek(f, (long)del_len, SEEK_CUR) != 0) break;
         }
@@ -1613,15 +1566,15 @@ int storage_finances_add(const char *date, const char *description, double amoun
     timestamp(ts, sizeof(ts));
     FILE *f = fopen(path, "ab");
     if (!f) return 0;
-    write_u32(f, (uint32_t)id);
-    write_str(f, d);
-    write_str(f, desc);
+    storage_io_write_u32(f, (uint32_t)id);
+    storage_io_write_str(f, d);
+    storage_io_write_str(f, desc);
     if (fwrite(&amount, sizeof(amount), 1, f) != 1) { fclose(f); return 0; }
-    write_str(f, cat);
-    write_str(f, acc);
-    write_str(f, n);
-    write_str(f, ts);
-    write_str(f, "");
+    storage_io_write_str(f, cat);
+    storage_io_write_str(f, acc);
+    storage_io_write_str(f, n);
+    storage_io_write_str(f, ts);
+    storage_io_write_str(f, "");
     fclose(f);
     return id;
 }
@@ -1634,16 +1587,16 @@ void storage_finances_list(void (*cb)(const VibeFinanceEntry *, void *), void *c
     VibeFinanceEntry fe = {0};
     while (1) {
         uint32_t id;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         fe.id = (int)id;
-        if (!read_str(f, fe.date, sizeof(fe.date))) break;
-        if (!read_str(f, fe.description, sizeof(fe.description))) break;
+        if (!storage_io_read_str(f, fe.date, sizeof(fe.date))) break;
+        if (!storage_io_read_str(f, fe.description, sizeof(fe.description))) break;
         if (fread(&fe.amount, sizeof(fe.amount), 1, f) != 1) break;
-        if (!read_str(f, fe.category, sizeof(fe.category))) break;
-        if (!read_str(f, fe.account, sizeof(fe.account))) break;
-        if (!read_str(f, fe.notes, sizeof(fe.notes))) break;
-        if (!read_str(f, fe.created_at, sizeof(fe.created_at))) break;
-        if (!read_str(f, fe.deleted_at, sizeof(fe.deleted_at))) break;
+        if (!storage_io_read_str(f, fe.category, sizeof(fe.category))) break;
+        if (!storage_io_read_str(f, fe.account, sizeof(fe.account))) break;
+        if (!storage_io_read_str(f, fe.notes, sizeof(fe.notes))) break;
+        if (!storage_io_read_str(f, fe.created_at, sizeof(fe.created_at))) break;
+        if (!storage_io_read_str(f, fe.deleted_at, sizeof(fe.deleted_at))) break;
         if (!fe.deleted_at[0]) cb(&fe, ctx);
     }
     fclose(f);
@@ -1674,51 +1627,51 @@ static int finances_rewrite(int skip_id, int set_deleted,
     int ok = 0;
     while (1) {
         uint32_t id;
-        if (!read_u32(in, &id)) break;
+        if (!storage_io_read_u32(in, &id)) break;
         char date[VIBE_DATETIME_MAX], desc[VIBE_TITLE_MAX], cat[VIBE_TITLE_MAX], acc[VIBE_TITLE_MAX], notes[VIBE_CONTENT_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
         double amt;
-        if (!read_str(in, date, sizeof(date))) break;
-        if (!read_str(in, desc, sizeof(desc))) break;
+        if (!storage_io_read_str(in, date, sizeof(date))) break;
+        if (!storage_io_read_str(in, desc, sizeof(desc))) break;
         if (fread(&amt, sizeof(amt), 1, in) != 1) break;
-        if (!read_str(in, cat, sizeof(cat))) break;
-        if (!read_str(in, acc, sizeof(acc))) break;
-        if (!read_str(in, notes, sizeof(notes))) break;
-        if (!read_str(in, created, sizeof(created))) break;
-        if (!read_str(in, deleted, sizeof(deleted))) break;
+        if (!storage_io_read_str(in, cat, sizeof(cat))) break;
+        if (!storage_io_read_str(in, acc, sizeof(acc))) break;
+        if (!storage_io_read_str(in, notes, sizeof(notes))) break;
+        if (!storage_io_read_str(in, created, sizeof(created))) break;
+        if (!storage_io_read_str(in, deleted, sizeof(deleted))) break;
         if ((int)id == skip_id) {
             if (set_deleted) {
                 timestamp(deleted, sizeof(deleted));
-                write_u32(out, id);
-                write_str(out, date);
-                write_str(out, desc);
+                storage_io_write_u32(out, id);
+                storage_io_write_str(out, date);
+                storage_io_write_str(out, desc);
                 fwrite(&amt, sizeof(amt), 1, out);
-                write_str(out, cat);
-                write_str(out, acc);
-                write_str(out, notes);
-                write_str(out, created);
-                write_str(out, deleted);
+                storage_io_write_str(out, cat);
+                storage_io_write_str(out, acc);
+                storage_io_write_str(out, notes);
+                storage_io_write_str(out, created);
+                storage_io_write_str(out, deleted);
             } else if (new_date) {
-                write_u32(out, id);
-                write_str(out, new_date);
-                write_str(out, new_desc ? new_desc : "");
+                storage_io_write_u32(out, id);
+                storage_io_write_str(out, new_date);
+                storage_io_write_str(out, new_desc ? new_desc : "");
                 fwrite(&new_amount, sizeof(new_amount), 1, out);
-                write_str(out, new_cat ? new_cat : "");
-                write_str(out, new_acc ? new_acc : "");
-                write_str(out, new_notes ? new_notes : "");
-                write_str(out, created);
-                write_str(out, "");
+                storage_io_write_str(out, new_cat ? new_cat : "");
+                storage_io_write_str(out, new_acc ? new_acc : "");
+                storage_io_write_str(out, new_notes ? new_notes : "");
+                storage_io_write_str(out, created);
+                storage_io_write_str(out, "");
             }
             ok = 1;
         } else {
-            write_u32(out, id);
-            write_str(out, date);
-            write_str(out, desc);
+            storage_io_write_u32(out, id);
+            storage_io_write_str(out, date);
+            storage_io_write_str(out, desc);
             fwrite(&amt, sizeof(amt), 1, out);
-            write_str(out, cat);
-            write_str(out, acc);
-            write_str(out, notes);
-            write_str(out, created);
-            write_str(out, deleted);
+            storage_io_write_str(out, cat);
+            storage_io_write_str(out, acc);
+            storage_io_write_str(out, notes);
+            storage_io_write_str(out, created);
+            storage_io_write_str(out, deleted);
         }
     }
     fclose(in);
@@ -1751,10 +1704,10 @@ int storage_documents_count(void) {
     if (f) {
         while (1) {
             uint32_t id;
-            if (!read_u32(f, &id)) break;
-            if (!skip_str(f) || !skip_str(f) || !skip_str(f) || !skip_str(f)) break;
+            if (!storage_io_read_u32(f, &id)) break;
+            if (!storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f) || !storage_io_skip_str(f)) break;
             uint32_t del_len;
-            if (!read_u32(f, &del_len)) break;
+            if (!storage_io_read_u32(f, &del_len)) break;
             if (del_len == 0) n++;
             else if (fseek(f, (long)del_len, SEEK_CUR) != 0) break;
         }
@@ -1776,12 +1729,12 @@ int storage_documents_add(const char *title, const char *template_name, const ch
     timestamp(ts, sizeof(ts));
     FILE *f = fopen(path, "ab");
     if (!f) return 0;
-    write_u32(f, (uint32_t)id);
-    write_str(f, t);
-    write_str(f, tn);
-    write_str(f, c);
-    write_str(f, ts);
-    write_str(f, "");
+    storage_io_write_u32(f, (uint32_t)id);
+    storage_io_write_str(f, t);
+    storage_io_write_str(f, tn);
+    storage_io_write_str(f, c);
+    storage_io_write_str(f, ts);
+    storage_io_write_str(f, "");
     fclose(f);
     return id;
 }
@@ -1794,13 +1747,13 @@ void storage_documents_list(void (*cb)(const VibeDocument *, void *), void *ctx)
     VibeDocument doc = {0};
     while (1) {
         uint32_t id;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         doc.id = (int)id;
-        if (!read_str(f, doc.title, sizeof(doc.title))) break;
-        if (!read_str(f, doc.template_name, sizeof(doc.template_name))) break;
-        if (!read_str(f, doc.content, sizeof(doc.content))) break;
-        if (!read_str(f, doc.created_at, sizeof(doc.created_at))) break;
-        if (!read_str(f, doc.deleted_at, sizeof(doc.deleted_at))) break;
+        if (!storage_io_read_str(f, doc.title, sizeof(doc.title))) break;
+        if (!storage_io_read_str(f, doc.template_name, sizeof(doc.template_name))) break;
+        if (!storage_io_read_str(f, doc.content, sizeof(doc.content))) break;
+        if (!storage_io_read_str(f, doc.created_at, sizeof(doc.created_at))) break;
+        if (!storage_io_read_str(f, doc.deleted_at, sizeof(doc.deleted_at))) break;
         if (!doc.deleted_at[0]) cb(&doc, ctx);
     }
     fclose(f);
@@ -1830,38 +1783,38 @@ static int documents_rewrite(int skip_id, int set_deleted,
     int ok = 0;
     while (1) {
         uint32_t id;
-        if (!read_u32(in, &id)) break;
+        if (!storage_io_read_u32(in, &id)) break;
         char title[VIBE_TITLE_MAX], tmpl[VIBE_TITLE_MAX], content[VIBE_CONTENT_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-        if (!read_str(in, title, sizeof(title))) break;
-        if (!read_str(in, tmpl, sizeof(tmpl))) break;
-        if (!read_str(in, content, sizeof(content))) break;
-        if (!read_str(in, created, sizeof(created))) break;
-        if (!read_str(in, deleted, sizeof(deleted))) break;
+        if (!storage_io_read_str(in, title, sizeof(title))) break;
+        if (!storage_io_read_str(in, tmpl, sizeof(tmpl))) break;
+        if (!storage_io_read_str(in, content, sizeof(content))) break;
+        if (!storage_io_read_str(in, created, sizeof(created))) break;
+        if (!storage_io_read_str(in, deleted, sizeof(deleted))) break;
         if ((int)id == skip_id) {
             if (set_deleted) {
                 timestamp(deleted, sizeof(deleted));
-                write_u32(out, id);
-                write_str(out, title);
-                write_str(out, tmpl);
-                write_str(out, content);
-                write_str(out, created);
-                write_str(out, deleted);
+                storage_io_write_u32(out, id);
+                storage_io_write_str(out, title);
+                storage_io_write_str(out, tmpl);
+                storage_io_write_str(out, content);
+                storage_io_write_str(out, created);
+                storage_io_write_str(out, deleted);
             } else if (new_title) {
-                write_u32(out, id);
-                write_str(out, new_title);
-                write_str(out, new_tmpl ? new_tmpl : "");
-                write_str(out, new_content ? new_content : "");
-                write_str(out, created);
-                write_str(out, "");
+                storage_io_write_u32(out, id);
+                storage_io_write_str(out, new_title);
+                storage_io_write_str(out, new_tmpl ? new_tmpl : "");
+                storage_io_write_str(out, new_content ? new_content : "");
+                storage_io_write_str(out, created);
+                storage_io_write_str(out, "");
             }
             ok = 1;
         } else {
-            write_u32(out, id);
-            write_str(out, title);
-            write_str(out, tmpl);
-            write_str(out, content);
-            write_str(out, created);
-            write_str(out, deleted);
+            storage_io_write_u32(out, id);
+            storage_io_write_str(out, title);
+            storage_io_write_str(out, tmpl);
+            storage_io_write_str(out, content);
+            storage_io_write_str(out, created);
+            storage_io_write_str(out, deleted);
         }
     }
     fclose(in);
@@ -1899,139 +1852,139 @@ static int permanent_delete_rewrite(const char *base, int skip_id) {
     if (strcmp(base, "notes") == 0) {
         while (1) {
             uint32_t id;
-            if (!read_u32(in, &id)) break;
+            if (!storage_io_read_u32(in, &id)) break;
             char title[VIBE_TITLE_MAX], content[VIBE_CONTENT_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-            if (!read_str(in, title, sizeof(title))) break;
-            if (!read_str(in, content, sizeof(content))) break;
-            if (!read_str(in, created, sizeof(created))) break;
-            if (!read_str(in, deleted, sizeof(deleted))) break;
+            if (!storage_io_read_str(in, title, sizeof(title))) break;
+            if (!storage_io_read_str(in, content, sizeof(content))) break;
+            if (!storage_io_read_str(in, created, sizeof(created))) break;
+            if (!storage_io_read_str(in, deleted, sizeof(deleted))) break;
             if ((int)id == skip_id) { found = 1; continue; }
-            write_u32(out, id);
-            write_str(out, title);
-            write_str(out, content);
-            write_str(out, created);
-            write_str(out, deleted);
+            storage_io_write_u32(out, id);
+            storage_io_write_str(out, title);
+            storage_io_write_str(out, content);
+            storage_io_write_str(out, created);
+            storage_io_write_str(out, deleted);
         }
     } else if (strcmp(base, "tasks") == 0) {
         while (1) {
             uint32_t id, done, prio;
-            if (!read_u32(in, &id)) break;
+            if (!storage_io_read_u32(in, &id)) break;
             char title[VIBE_TITLE_MAX], due[VIBE_DATETIME_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-            if (!read_str(in, title, sizeof(title))) break;
-            if (!read_u32(in, &done)) break;
-            if (!read_str(in, due, sizeof(due))) break;
-            if (!read_u32(in, &prio)) break;
-            if (!read_str(in, created, sizeof(created))) break;
-            if (!read_str(in, deleted, sizeof(deleted))) break;
+            if (!storage_io_read_str(in, title, sizeof(title))) break;
+            if (!storage_io_read_u32(in, &done)) break;
+            if (!storage_io_read_str(in, due, sizeof(due))) break;
+            if (!storage_io_read_u32(in, &prio)) break;
+            if (!storage_io_read_str(in, created, sizeof(created))) break;
+            if (!storage_io_read_str(in, deleted, sizeof(deleted))) break;
             if ((int)id == skip_id) { found = 1; continue; }
-            write_u32(out, id);
-            write_str(out, title);
-            write_u32(out, done);
-            write_str(out, due);
-            write_u32(out, prio);
-            write_str(out, created);
-            write_str(out, deleted);
+            storage_io_write_u32(out, id);
+            storage_io_write_str(out, title);
+            storage_io_write_u32(out, done);
+            storage_io_write_str(out, due);
+            storage_io_write_u32(out, prio);
+            storage_io_write_str(out, created);
+            storage_io_write_str(out, deleted);
         }
     } else if (strcmp(base, "contacts") == 0) {
         while (1) {
             uint32_t id;
-            if (!read_u32(in, &id)) break;
+            if (!storage_io_read_u32(in, &id)) break;
             char name[VIBE_NAME_MAX], email[VIBE_EMAIL_MAX], phone[VIBE_PHONE_MAX], notes[VIBE_CONTENT_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-            if (!read_str(in, name, sizeof(name))) break;
-            if (!read_str(in, email, sizeof(email))) break;
-            if (!read_str(in, phone, sizeof(phone))) break;
-            if (!read_str(in, notes, sizeof(notes))) break;
-            if (!read_str(in, created, sizeof(created))) break;
-            if (!read_str(in, deleted, sizeof(deleted))) break;
+            if (!storage_io_read_str(in, name, sizeof(name))) break;
+            if (!storage_io_read_str(in, email, sizeof(email))) break;
+            if (!storage_io_read_str(in, phone, sizeof(phone))) break;
+            if (!storage_io_read_str(in, notes, sizeof(notes))) break;
+            if (!storage_io_read_str(in, created, sizeof(created))) break;
+            if (!storage_io_read_str(in, deleted, sizeof(deleted))) break;
             if ((int)id == skip_id) { found = 1; continue; }
-            write_u32(out, id);
-            write_str(out, name);
-            write_str(out, email);
-            write_str(out, phone);
-            write_str(out, notes);
-            write_str(out, created);
-            write_str(out, deleted);
+            storage_io_write_u32(out, id);
+            storage_io_write_str(out, name);
+            storage_io_write_str(out, email);
+            storage_io_write_str(out, phone);
+            storage_io_write_str(out, notes);
+            storage_io_write_str(out, created);
+            storage_io_write_str(out, deleted);
         }
     } else if (strcmp(base, "events") == 0) {
         while (1) {
             uint32_t id, all_day;
-            if (!read_u32(in, &id)) break;
+            if (!storage_io_read_u32(in, &id)) break;
             char title[VIBE_TITLE_MAX], desc[VIBE_CONTENT_MAX], start[VIBE_DATETIME_MAX], end[VIBE_DATETIME_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-            if (!read_str(in, title, sizeof(title))) break;
-            if (!read_str(in, desc, sizeof(desc))) break;
-            if (!read_str(in, start, sizeof(start))) break;
-            if (!read_str(in, end, sizeof(end))) break;
-            if (!read_u32(in, &all_day)) break;
-            if (!read_str(in, created, sizeof(created))) break;
-            if (!read_str(in, deleted, sizeof(deleted))) break;
+            if (!storage_io_read_str(in, title, sizeof(title))) break;
+            if (!storage_io_read_str(in, desc, sizeof(desc))) break;
+            if (!storage_io_read_str(in, start, sizeof(start))) break;
+            if (!storage_io_read_str(in, end, sizeof(end))) break;
+            if (!storage_io_read_u32(in, &all_day)) break;
+            if (!storage_io_read_str(in, created, sizeof(created))) break;
+            if (!storage_io_read_str(in, deleted, sizeof(deleted))) break;
             if ((int)id == skip_id) { found = 1; continue; }
-            write_u32(out, id);
-            write_str(out, title);
-            write_str(out, desc);
-            write_str(out, start);
-            write_str(out, end);
-            write_u32(out, all_day);
-            write_str(out, created);
-            write_str(out, deleted);
+            storage_io_write_u32(out, id);
+            storage_io_write_str(out, title);
+            storage_io_write_str(out, desc);
+            storage_io_write_str(out, start);
+            storage_io_write_str(out, end);
+            storage_io_write_u32(out, all_day);
+            storage_io_write_str(out, created);
+            storage_io_write_str(out, deleted);
         }
     } else if (strcmp(base, "facts") == 0) {
         while (1) {
             uint32_t id;
-            if (!read_u32(in, &id)) break;
+            if (!storage_io_read_u32(in, &id)) break;
             char key[VIBE_TITLE_MAX], value[VIBE_CONTENT_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-            if (!read_str(in, key, sizeof(key))) break;
-            if (!read_str(in, value, sizeof(value))) break;
-            if (!read_str(in, created, sizeof(created))) break;
-            if (!read_str(in, deleted, sizeof(deleted))) break;
+            if (!storage_io_read_str(in, key, sizeof(key))) break;
+            if (!storage_io_read_str(in, value, sizeof(value))) break;
+            if (!storage_io_read_str(in, created, sizeof(created))) break;
+            if (!storage_io_read_str(in, deleted, sizeof(deleted))) break;
             if ((int)id == skip_id) { found = 1; continue; }
-            write_u32(out, id);
-            write_str(out, key);
-            write_str(out, value);
-            write_str(out, created);
-            write_str(out, deleted);
+            storage_io_write_u32(out, id);
+            storage_io_write_str(out, key);
+            storage_io_write_str(out, value);
+            storage_io_write_str(out, created);
+            storage_io_write_str(out, deleted);
         }
     } else if (strcmp(base, "finances") == 0) {
         while (1) {
             uint32_t id;
-            if (!read_u32(in, &id)) break;
+            if (!storage_io_read_u32(in, &id)) break;
             char date[VIBE_DATETIME_MAX], desc[VIBE_TITLE_MAX], cat[VIBE_TITLE_MAX], acc[VIBE_TITLE_MAX], notes[VIBE_CONTENT_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
             double amt;
-            if (!read_str(in, date, sizeof(date))) break;
-            if (!read_str(in, desc, sizeof(desc))) break;
+            if (!storage_io_read_str(in, date, sizeof(date))) break;
+            if (!storage_io_read_str(in, desc, sizeof(desc))) break;
             if (fread(&amt, sizeof(amt), 1, in) != 1) break;
-            if (!read_str(in, cat, sizeof(cat))) break;
-            if (!read_str(in, acc, sizeof(acc))) break;
-            if (!read_str(in, notes, sizeof(notes))) break;
-            if (!read_str(in, created, sizeof(created))) break;
-            if (!read_str(in, deleted, sizeof(deleted))) break;
+            if (!storage_io_read_str(in, cat, sizeof(cat))) break;
+            if (!storage_io_read_str(in, acc, sizeof(acc))) break;
+            if (!storage_io_read_str(in, notes, sizeof(notes))) break;
+            if (!storage_io_read_str(in, created, sizeof(created))) break;
+            if (!storage_io_read_str(in, deleted, sizeof(deleted))) break;
             if ((int)id == skip_id) { found = 1; continue; }
-            write_u32(out, id);
-            write_str(out, date);
-            write_str(out, desc);
+            storage_io_write_u32(out, id);
+            storage_io_write_str(out, date);
+            storage_io_write_str(out, desc);
             fwrite(&amt, sizeof(amt), 1, out);
-            write_str(out, cat);
-            write_str(out, acc);
-            write_str(out, notes);
-            write_str(out, created);
-            write_str(out, deleted);
+            storage_io_write_str(out, cat);
+            storage_io_write_str(out, acc);
+            storage_io_write_str(out, notes);
+            storage_io_write_str(out, created);
+            storage_io_write_str(out, deleted);
         }
     } else if (strcmp(base, "documents") == 0) {
         while (1) {
             uint32_t id;
-            if (!read_u32(in, &id)) break;
+            if (!storage_io_read_u32(in, &id)) break;
             char title[VIBE_TITLE_MAX], tmpl[VIBE_TITLE_MAX], content[VIBE_CONTENT_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-            if (!read_str(in, title, sizeof(title))) break;
-            if (!read_str(in, tmpl, sizeof(tmpl))) break;
-            if (!read_str(in, content, sizeof(content))) break;
-            if (!read_str(in, created, sizeof(created))) break;
-            if (!read_str(in, deleted, sizeof(deleted))) break;
+            if (!storage_io_read_str(in, title, sizeof(title))) break;
+            if (!storage_io_read_str(in, tmpl, sizeof(tmpl))) break;
+            if (!storage_io_read_str(in, content, sizeof(content))) break;
+            if (!storage_io_read_str(in, created, sizeof(created))) break;
+            if (!storage_io_read_str(in, deleted, sizeof(deleted))) break;
             if ((int)id == skip_id) { found = 1; continue; }
-            write_u32(out, id);
-            write_str(out, title);
-            write_str(out, tmpl);
-            write_str(out, content);
-            write_str(out, created);
-            write_str(out, deleted);
+            storage_io_write_u32(out, id);
+            storage_io_write_str(out, title);
+            storage_io_write_str(out, tmpl);
+            storage_io_write_str(out, content);
+            storage_io_write_str(out, created);
+            storage_io_write_str(out, deleted);
         }
     }
     fclose(in);
@@ -2079,109 +2032,109 @@ static int empty_trash_file(const char *base, int (*read_record)(FILE*, FILE*, i
 
 static int notes_empty_record(FILE *in, FILE *out, int *is_deleted) {
     uint32_t id;
-    if (!read_u32(in, &id)) return 0;
+    if (!storage_io_read_u32(in, &id)) return 0;
     char title[VIBE_TITLE_MAX], content[VIBE_CONTENT_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-    if (!read_str(in, title, sizeof(title))) return 0;
-    if (!read_str(in, content, sizeof(content))) return 0;
-    if (!read_str(in, created, sizeof(created))) return 0;
-    if (!read_str(in, deleted, sizeof(deleted))) return 0;
+    if (!storage_io_read_str(in, title, sizeof(title))) return 0;
+    if (!storage_io_read_str(in, content, sizeof(content))) return 0;
+    if (!storage_io_read_str(in, created, sizeof(created))) return 0;
+    if (!storage_io_read_str(in, deleted, sizeof(deleted))) return 0;
     *is_deleted = (deleted[0] != '\0');
     if (!*is_deleted) {
-        write_u32(out, id);
-        write_str(out, title);
-        write_str(out, content);
-        write_str(out, created);
-        write_str(out, "");
+        storage_io_write_u32(out, id);
+        storage_io_write_str(out, title);
+        storage_io_write_str(out, content);
+        storage_io_write_str(out, created);
+        storage_io_write_str(out, "");
     }
     return 1;
 }
 
 static int tasks_empty_record(FILE *in, FILE *out, int *is_deleted) {
     uint32_t id, done, prio;
-    if (!read_u32(in, &id)) return 0;
+    if (!storage_io_read_u32(in, &id)) return 0;
     char title[VIBE_TITLE_MAX], due[VIBE_DATETIME_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-    if (!read_str(in, title, sizeof(title))) return 0;
-    if (!read_u32(in, &done)) return 0;
-    if (!read_str(in, due, sizeof(due))) return 0;
-    if (!read_u32(in, &prio)) return 0;
-    if (!read_str(in, created, sizeof(created))) return 0;
-    if (!read_str(in, deleted, sizeof(deleted))) return 0;
+    if (!storage_io_read_str(in, title, sizeof(title))) return 0;
+    if (!storage_io_read_u32(in, &done)) return 0;
+    if (!storage_io_read_str(in, due, sizeof(due))) return 0;
+    if (!storage_io_read_u32(in, &prio)) return 0;
+    if (!storage_io_read_str(in, created, sizeof(created))) return 0;
+    if (!storage_io_read_str(in, deleted, sizeof(deleted))) return 0;
     *is_deleted = (deleted[0] != '\0');
     if (!*is_deleted) {
-        write_u32(out, id);
-        write_str(out, title);
-        write_u32(out, done);
-        write_str(out, due);
-        write_u32(out, prio);
-        write_str(out, created);
-        write_str(out, "");
+        storage_io_write_u32(out, id);
+        storage_io_write_str(out, title);
+        storage_io_write_u32(out, done);
+        storage_io_write_str(out, due);
+        storage_io_write_u32(out, prio);
+        storage_io_write_str(out, created);
+        storage_io_write_str(out, "");
     }
     return 1;
 }
 
 static int contacts_empty_record(FILE *in, FILE *out, int *is_deleted) {
     uint32_t id;
-    if (!read_u32(in, &id)) return 0;
+    if (!storage_io_read_u32(in, &id)) return 0;
     char name[VIBE_NAME_MAX], email[VIBE_EMAIL_MAX], phone[VIBE_PHONE_MAX], notes[VIBE_CONTENT_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-    if (!read_str(in, name, sizeof(name))) return 0;
-    if (!read_str(in, email, sizeof(email))) return 0;
-    if (!read_str(in, phone, sizeof(phone))) return 0;
-    if (!read_str(in, notes, sizeof(notes))) return 0;
-    if (!read_str(in, created, sizeof(created))) return 0;
-    if (!read_str(in, deleted, sizeof(deleted))) return 0;
+    if (!storage_io_read_str(in, name, sizeof(name))) return 0;
+    if (!storage_io_read_str(in, email, sizeof(email))) return 0;
+    if (!storage_io_read_str(in, phone, sizeof(phone))) return 0;
+    if (!storage_io_read_str(in, notes, sizeof(notes))) return 0;
+    if (!storage_io_read_str(in, created, sizeof(created))) return 0;
+    if (!storage_io_read_str(in, deleted, sizeof(deleted))) return 0;
     *is_deleted = (deleted[0] != '\0');
     if (!*is_deleted) {
-        write_u32(out, id);
-        write_str(out, name);
-        write_str(out, email);
-        write_str(out, phone);
-        write_str(out, notes);
-        write_str(out, created);
-        write_str(out, "");
+        storage_io_write_u32(out, id);
+        storage_io_write_str(out, name);
+        storage_io_write_str(out, email);
+        storage_io_write_str(out, phone);
+        storage_io_write_str(out, notes);
+        storage_io_write_str(out, created);
+        storage_io_write_str(out, "");
     }
     return 1;
 }
 
 static int events_empty_record(FILE *in, FILE *out, int *is_deleted) {
     uint32_t id, all_day;
-    if (!read_u32(in, &id)) return 0;
+    if (!storage_io_read_u32(in, &id)) return 0;
     char title[VIBE_TITLE_MAX], desc[VIBE_CONTENT_MAX], start[VIBE_DATETIME_MAX], end[VIBE_DATETIME_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-    if (!read_str(in, title, sizeof(title))) return 0;
-    if (!read_str(in, desc, sizeof(desc))) return 0;
-    if (!read_str(in, start, sizeof(start))) return 0;
-    if (!read_str(in, end, sizeof(end))) return 0;
-    if (!read_u32(in, &all_day)) return 0;
-    if (!read_str(in, created, sizeof(created))) return 0;
-    if (!read_str(in, deleted, sizeof(deleted))) return 0;
+    if (!storage_io_read_str(in, title, sizeof(title))) return 0;
+    if (!storage_io_read_str(in, desc, sizeof(desc))) return 0;
+    if (!storage_io_read_str(in, start, sizeof(start))) return 0;
+    if (!storage_io_read_str(in, end, sizeof(end))) return 0;
+    if (!storage_io_read_u32(in, &all_day)) return 0;
+    if (!storage_io_read_str(in, created, sizeof(created))) return 0;
+    if (!storage_io_read_str(in, deleted, sizeof(deleted))) return 0;
     *is_deleted = (deleted[0] != '\0');
     if (!*is_deleted) {
-        write_u32(out, id);
-        write_str(out, title);
-        write_str(out, desc);
-        write_str(out, start);
-        write_str(out, end);
-        write_u32(out, all_day);
-        write_str(out, created);
-        write_str(out, "");
+        storage_io_write_u32(out, id);
+        storage_io_write_str(out, title);
+        storage_io_write_str(out, desc);
+        storage_io_write_str(out, start);
+        storage_io_write_str(out, end);
+        storage_io_write_u32(out, all_day);
+        storage_io_write_str(out, created);
+        storage_io_write_str(out, "");
     }
     return 1;
 }
 
 static int facts_empty_record(FILE *in, FILE *out, int *is_deleted) {
     uint32_t id;
-    if (!read_u32(in, &id)) return 0;
+    if (!storage_io_read_u32(in, &id)) return 0;
     char key[VIBE_TITLE_MAX], value[VIBE_CONTENT_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-    if (!read_str(in, key, sizeof(key))) return 0;
-    if (!read_str(in, value, sizeof(value))) return 0;
-    if (!read_str(in, created, sizeof(created))) return 0;
-    if (!read_str(in, deleted, sizeof(deleted))) return 0;
+    if (!storage_io_read_str(in, key, sizeof(key))) return 0;
+    if (!storage_io_read_str(in, value, sizeof(value))) return 0;
+    if (!storage_io_read_str(in, created, sizeof(created))) return 0;
+    if (!storage_io_read_str(in, deleted, sizeof(deleted))) return 0;
     *is_deleted = (deleted[0] != '\0');
     if (!*is_deleted) {
-        write_u32(out, id);
-        write_str(out, key);
-        write_str(out, value);
-        write_str(out, created);
-        write_str(out, "");
+        storage_io_write_u32(out, id);
+        storage_io_write_str(out, key);
+        storage_io_write_str(out, value);
+        storage_io_write_str(out, created);
+        storage_io_write_str(out, "");
     }
     return 1;
 }
@@ -2189,48 +2142,48 @@ static int facts_empty_record(FILE *in, FILE *out, int *is_deleted) {
 static int finances_empty_record(FILE *in, FILE *out, int *is_deleted) {
     uint32_t id;
     double amt;
-    if (!read_u32(in, &id)) return 0;
+    if (!storage_io_read_u32(in, &id)) return 0;
     char date[VIBE_DATETIME_MAX], desc[VIBE_TITLE_MAX], cat[VIBE_TITLE_MAX], acc[VIBE_TITLE_MAX], notes[VIBE_CONTENT_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-    if (!read_str(in, date, sizeof(date))) return 0;
-    if (!read_str(in, desc, sizeof(desc))) return 0;
+    if (!storage_io_read_str(in, date, sizeof(date))) return 0;
+    if (!storage_io_read_str(in, desc, sizeof(desc))) return 0;
     if (fread(&amt, sizeof(amt), 1, in) != 1) return 0;
-    if (!read_str(in, cat, sizeof(cat))) return 0;
-    if (!read_str(in, acc, sizeof(acc))) return 0;
-    if (!read_str(in, notes, sizeof(notes))) return 0;
-    if (!read_str(in, created, sizeof(created))) return 0;
-    if (!read_str(in, deleted, sizeof(deleted))) return 0;
+    if (!storage_io_read_str(in, cat, sizeof(cat))) return 0;
+    if (!storage_io_read_str(in, acc, sizeof(acc))) return 0;
+    if (!storage_io_read_str(in, notes, sizeof(notes))) return 0;
+    if (!storage_io_read_str(in, created, sizeof(created))) return 0;
+    if (!storage_io_read_str(in, deleted, sizeof(deleted))) return 0;
     *is_deleted = (deleted[0] != '\0');
     if (!*is_deleted) {
-        write_u32(out, id);
-        write_str(out, date);
-        write_str(out, desc);
+        storage_io_write_u32(out, id);
+        storage_io_write_str(out, date);
+        storage_io_write_str(out, desc);
         fwrite(&amt, sizeof(amt), 1, out);
-        write_str(out, cat);
-        write_str(out, acc);
-        write_str(out, notes);
-        write_str(out, created);
-        write_str(out, "");
+        storage_io_write_str(out, cat);
+        storage_io_write_str(out, acc);
+        storage_io_write_str(out, notes);
+        storage_io_write_str(out, created);
+        storage_io_write_str(out, "");
     }
     return 1;
 }
 
 static int documents_empty_record(FILE *in, FILE *out, int *is_deleted) {
     uint32_t id;
-    if (!read_u32(in, &id)) return 0;
+    if (!storage_io_read_u32(in, &id)) return 0;
     char title[VIBE_TITLE_MAX], tmpl[VIBE_TITLE_MAX], content[VIBE_CONTENT_MAX], created[VIBE_DATETIME_MAX], deleted[VIBE_DATETIME_MAX];
-    if (!read_str(in, title, sizeof(title))) return 0;
-    if (!read_str(in, tmpl, sizeof(tmpl))) return 0;
-    if (!read_str(in, content, sizeof(content))) return 0;
-    if (!read_str(in, created, sizeof(created))) return 0;
-    if (!read_str(in, deleted, sizeof(deleted))) return 0;
+    if (!storage_io_read_str(in, title, sizeof(title))) return 0;
+    if (!storage_io_read_str(in, tmpl, sizeof(tmpl))) return 0;
+    if (!storage_io_read_str(in, content, sizeof(content))) return 0;
+    if (!storage_io_read_str(in, created, sizeof(created))) return 0;
+    if (!storage_io_read_str(in, deleted, sizeof(deleted))) return 0;
     *is_deleted = (deleted[0] != '\0');
     if (!*is_deleted) {
-        write_u32(out, id);
-        write_str(out, title);
-        write_str(out, tmpl);
-        write_str(out, content);
-        write_str(out, created);
-        write_str(out, "");
+        storage_io_write_u32(out, id);
+        storage_io_write_str(out, title);
+        storage_io_write_str(out, tmpl);
+        storage_io_write_str(out, content);
+        storage_io_write_str(out, created);
+        storage_io_write_str(out, "");
     }
     return 1;
 }
@@ -2259,12 +2212,12 @@ void storage_notes_list_filtered(void (*cb)(const VibeNote *, void *), void *ctx
     VibeNote n = {0};
     while (1) {
         uint32_t id;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         n.id = (int)id;
-        if (!read_str(f, n.title, sizeof(n.title))) break;
-        if (!read_str(f, n.content, sizeof(n.content))) break;
-        if (!read_str(f, n.created_at, sizeof(n.created_at))) break;
-        if (!read_str(f, n.deleted_at, sizeof(n.deleted_at))) break;
+        if (!storage_io_read_str(f, n.title, sizeof(n.title))) break;
+        if (!storage_io_read_str(f, n.content, sizeof(n.content))) break;
+        if (!storage_io_read_str(f, n.created_at, sizeof(n.created_at))) break;
+        if (!storage_io_read_str(f, n.deleted_at, sizeof(n.deleted_at))) break;
         if (!n.deleted_at[0] && (str_contains_ci(n.title, query) || str_contains_ci(n.content, query)))
             cb(&n, ctx);
     }
@@ -2280,16 +2233,16 @@ void storage_tasks_list_filtered(void (*cb)(const VibeTask *, void *), void *ctx
     VibeTask t = {0};
     while (1) {
         uint32_t id, done, prio;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         t.id = (int)id;
-        if (!read_str(f, t.title, sizeof(t.title))) break;
-        if (!read_u32(f, &done)) break;
+        if (!storage_io_read_str(f, t.title, sizeof(t.title))) break;
+        if (!storage_io_read_u32(f, &done)) break;
         t.done = (int)done;
-        if (!read_str(f, t.due_date, sizeof(t.due_date))) break;
-        if (!read_u32(f, &prio)) break;
+        if (!storage_io_read_str(f, t.due_date, sizeof(t.due_date))) break;
+        if (!storage_io_read_u32(f, &prio)) break;
         t.priority = (int)prio;
-        if (!read_str(f, t.created_at, sizeof(t.created_at))) break;
-        if (!read_str(f, t.deleted_at, sizeof(t.deleted_at))) break;
+        if (!storage_io_read_str(f, t.created_at, sizeof(t.created_at))) break;
+        if (!storage_io_read_str(f, t.deleted_at, sizeof(t.deleted_at))) break;
         if (!t.deleted_at[0] && str_contains_ci(t.title, query)) cb(&t, ctx);
     }
     fclose(f);
@@ -2304,14 +2257,14 @@ void storage_contacts_list_filtered(void (*cb)(const VibeContact *, void *), voi
     VibeContact c = {0};
     while (1) {
         uint32_t id;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         c.id = (int)id;
-        if (!read_str(f, c.name, sizeof(c.name))) break;
-        if (!read_str(f, c.email, sizeof(c.email))) break;
-        if (!read_str(f, c.phone, sizeof(c.phone))) break;
-        if (!read_str(f, c.notes, sizeof(c.notes))) break;
-        if (!read_str(f, c.created_at, sizeof(c.created_at))) break;
-        if (!read_str(f, c.deleted_at, sizeof(c.deleted_at))) break;
+        if (!storage_io_read_str(f, c.name, sizeof(c.name))) break;
+        if (!storage_io_read_str(f, c.email, sizeof(c.email))) break;
+        if (!storage_io_read_str(f, c.phone, sizeof(c.phone))) break;
+        if (!storage_io_read_str(f, c.notes, sizeof(c.notes))) break;
+        if (!storage_io_read_str(f, c.created_at, sizeof(c.created_at))) break;
+        if (!storage_io_read_str(f, c.deleted_at, sizeof(c.deleted_at))) break;
         if (!c.deleted_at[0] && (str_contains_ci(c.name, query) || str_contains_ci(c.email, query) || str_contains_ci(c.phone, query) || str_contains_ci(c.notes, query)))
             cb(&c, ctx);
     }
@@ -2327,16 +2280,16 @@ void storage_events_list_filtered(void (*cb)(const VibeCalendarEvent *, void *),
     VibeCalendarEvent e = {0};
     while (1) {
         uint32_t id, all_day;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         e.id = (int)id;
-        if (!read_str(f, e.title, sizeof(e.title))) break;
-        if (!read_str(f, e.description, sizeof(e.description))) break;
-        if (!read_str(f, e.start_at, sizeof(e.start_at))) break;
-        if (!read_str(f, e.end_at, sizeof(e.end_at))) break;
-        if (!read_u32(f, &all_day)) break;
+        if (!storage_io_read_str(f, e.title, sizeof(e.title))) break;
+        if (!storage_io_read_str(f, e.description, sizeof(e.description))) break;
+        if (!storage_io_read_str(f, e.start_at, sizeof(e.start_at))) break;
+        if (!storage_io_read_str(f, e.end_at, sizeof(e.end_at))) break;
+        if (!storage_io_read_u32(f, &all_day)) break;
         e.all_day = (int)all_day;
-        if (!read_str(f, e.created_at, sizeof(e.created_at))) break;
-        if (!read_str(f, e.deleted_at, sizeof(e.deleted_at))) break;
+        if (!storage_io_read_str(f, e.created_at, sizeof(e.created_at))) break;
+        if (!storage_io_read_str(f, e.deleted_at, sizeof(e.deleted_at))) break;
         if (!e.deleted_at[0] && str_contains_ci(e.title, query)) cb(&e, ctx);
     }
     fclose(f);
@@ -2351,12 +2304,12 @@ void storage_facts_list_filtered(void (*cb)(const VibeFact *, void *), void *ctx
     VibeFact fact = {0};
     while (1) {
         uint32_t id;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         fact.id = (int)id;
-        if (!read_str(f, fact.key, sizeof(fact.key))) break;
-        if (!read_str(f, fact.value, sizeof(fact.value))) break;
-        if (!read_str(f, fact.created_at, sizeof(fact.created_at))) break;
-        if (!read_str(f, fact.deleted_at, sizeof(fact.deleted_at))) break;
+        if (!storage_io_read_str(f, fact.key, sizeof(fact.key))) break;
+        if (!storage_io_read_str(f, fact.value, sizeof(fact.value))) break;
+        if (!storage_io_read_str(f, fact.created_at, sizeof(fact.created_at))) break;
+        if (!storage_io_read_str(f, fact.deleted_at, sizeof(fact.deleted_at))) break;
         if (!fact.deleted_at[0] && (str_contains_ci(fact.key, query) || str_contains_ci(fact.value, query)))
             cb(&fact, ctx);
     }
@@ -2372,16 +2325,16 @@ void storage_finances_list_filtered(void (*cb)(const VibeFinanceEntry *, void *)
     VibeFinanceEntry fe = {0};
     while (1) {
         uint32_t id;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         fe.id = (int)id;
-        if (!read_str(f, fe.date, sizeof(fe.date))) break;
-        if (!read_str(f, fe.description, sizeof(fe.description))) break;
+        if (!storage_io_read_str(f, fe.date, sizeof(fe.date))) break;
+        if (!storage_io_read_str(f, fe.description, sizeof(fe.description))) break;
         if (fread(&fe.amount, sizeof(fe.amount), 1, f) != 1) break;
-        if (!read_str(f, fe.category, sizeof(fe.category))) break;
-        if (!read_str(f, fe.account, sizeof(fe.account))) break;
-        if (!read_str(f, fe.notes, sizeof(fe.notes))) break;
-        if (!read_str(f, fe.created_at, sizeof(fe.created_at))) break;
-        if (!read_str(f, fe.deleted_at, sizeof(fe.deleted_at))) break;
+        if (!storage_io_read_str(f, fe.category, sizeof(fe.category))) break;
+        if (!storage_io_read_str(f, fe.account, sizeof(fe.account))) break;
+        if (!storage_io_read_str(f, fe.notes, sizeof(fe.notes))) break;
+        if (!storage_io_read_str(f, fe.created_at, sizeof(fe.created_at))) break;
+        if (!storage_io_read_str(f, fe.deleted_at, sizeof(fe.deleted_at))) break;
         if (!fe.deleted_at[0] && (str_contains_ci(fe.description, query) || str_contains_ci(fe.category, query) || str_contains_ci(fe.account, query)))
             cb(&fe, ctx);
     }
@@ -2397,13 +2350,13 @@ void storage_documents_list_filtered(void (*cb)(const VibeDocument *, void *), v
     VibeDocument doc = {0};
     while (1) {
         uint32_t id;
-        if (!read_u32(f, &id)) break;
+        if (!storage_io_read_u32(f, &id)) break;
         doc.id = (int)id;
-        if (!read_str(f, doc.title, sizeof(doc.title))) break;
-        if (!read_str(f, doc.template_name, sizeof(doc.template_name))) break;
-        if (!read_str(f, doc.content, sizeof(doc.content))) break;
-        if (!read_str(f, doc.created_at, sizeof(doc.created_at))) break;
-        if (!read_str(f, doc.deleted_at, sizeof(doc.deleted_at))) break;
+        if (!storage_io_read_str(f, doc.title, sizeof(doc.title))) break;
+        if (!storage_io_read_str(f, doc.template_name, sizeof(doc.template_name))) break;
+        if (!storage_io_read_str(f, doc.content, sizeof(doc.content))) break;
+        if (!storage_io_read_str(f, doc.created_at, sizeof(doc.created_at))) break;
+        if (!storage_io_read_str(f, doc.deleted_at, sizeof(doc.deleted_at))) break;
         if (!doc.deleted_at[0] && (str_contains_ci(doc.title, query) || str_contains_ci(doc.template_name, query) || str_contains_ci(doc.content, query)))
             cb(&doc, ctx);
     }

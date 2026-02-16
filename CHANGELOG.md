@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - **Storage**: All entity types now use little-endian read_u32/write_u32 for portability. Trash supports finance and document types.
+- **Architecture**: Extracted `ui_box` (box-drawing) and `storage_io` (binary I/O) into separate modules for encapsulation and reuse. Added `docs/ARCHITECTURE.md`.
 
 ---
 

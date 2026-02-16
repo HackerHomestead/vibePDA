@@ -2,6 +2,7 @@
 
 #include "fixture_parks.h"
 #include "storage.h"
+#include "test_common.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -200,7 +201,7 @@ void test_storage(void) {
     snprintf(data_dir, sizeof(data_dir), ".");
 #endif
 
-    /* Empty storage */
+    if (test_verbose()) fprintf(stderr, "    storage_empty\n");
     test_storage_empty(data_dir);
 
 #ifdef PLATFORM_LINUX
@@ -209,11 +210,13 @@ void test_storage(void) {
         char migrate_dir[256];
         snprintf(migrate_dir, sizeof(migrate_dir), "/tmp/vibe_migrate_XXXXXX");
         if (mkdtemp(migrate_dir)) {
+            if (test_verbose()) fprintf(stderr, "    migration\n");
             test_migration(migrate_dir);
             remove_test_dir(migrate_dir);
         }
         snprintf(migrate_dir, sizeof(migrate_dir), "/tmp/vibe_corrupt_XXXXXX");
         if (mkdtemp(migrate_dir)) {
+            if (test_verbose()) fprintf(stderr, "    corruption_and_edge_cases\n");
             test_corruption_and_edge_cases(migrate_dir);
             remove_test_dir(migrate_dir);
         }
@@ -226,7 +229,7 @@ void test_storage(void) {
         return;
     }
 
-    /* Seed Parks and Rec themed dummy data (configurable, random). */
+    if (test_verbose()) fprintf(stderr, "    seed_dummy_data (%d records)\n", want_records);
     fixture_seed_parks(data_dir, want_records);
 
     int notes = storage_notes_count();
@@ -236,6 +239,7 @@ void test_storage(void) {
     assert(notes + tasks + contacts + events == want_records);
     assert(notes > 0 && tasks > 0 && contacts > 0 && events > 0);
 
+    if (test_verbose()) fprintf(stderr, "    tasks_crud\n");
     /* Tasks: get, update, delete */
     {
         int task_id = 0;
@@ -255,6 +259,7 @@ void test_storage(void) {
         assert(storage_tasks_count() == tasks - 1);
     }
 
+    if (test_verbose()) fprintf(stderr, "    contacts_crud\n");
     /* Contacts: list, get, update, delete */
     {
         int contact_id = 0;
@@ -274,6 +279,7 @@ void test_storage(void) {
         assert(storage_contacts_count() == contacts - 1);
     }
 
+    if (test_verbose()) fprintf(stderr, "    events_crud\n");
     /* Events: list, get, update, delete */
     {
         int event_id = 0;
@@ -293,6 +299,7 @@ void test_storage(void) {
         assert(storage_events_count() == events - 1);
     }
 
+    if (test_verbose()) fprintf(stderr, "    trash_list_restore_permanent\n");
     /* Trash: test soft-delete and trash listing */
     {
         int initial_trash_count = storage_trash_count();

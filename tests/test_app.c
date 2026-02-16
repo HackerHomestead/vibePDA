@@ -2,6 +2,7 @@
 
 #include "app.h"
 #include "storage.h"
+#include "test_common.h"
 #include "tui.h"
 #include <assert.h>
 #include <stdio.h>
@@ -15,6 +16,7 @@
 void test_app(void) {
     AppState a;
 
+    if (test_verbose()) fprintf(stderr, "    app_init\n");
     app_init(&a, 24, 80);
     assert(a.current_module == 0);
     assert(a.focus_sidebar == 1);
@@ -22,6 +24,7 @@ void test_app(void) {
     assert(a.show_help == 0);
     assert(a.prompt_mode == 0);
 
+    if (test_verbose()) fprintf(stderr, "    module_switch\n");
     /* Module switch: Up/Down in sidebar */
     app_handle_key(&a, KEY_DOWN);
     assert(a.current_module == MODULE_TASKS);
@@ -47,17 +50,20 @@ void test_app(void) {
     app_handle_key(&a, KEY_UP);
     assert(a.current_module == MODULE_NOTES);
 
+    if (test_verbose()) fprintf(stderr, "    focus_tab\n");
     /* Focus: Tab switches to main pane */
     app_handle_key(&a, KEY_TAB);
     assert(a.focus_sidebar == 0);
     app_handle_key(&a, KEY_BACKTAB);
     assert(a.focus_sidebar == 1);
 
+    if (test_verbose()) fprintf(stderr, "    quit\n");
     /* Quit */
     app_init(&a, 24, 80);
     app_handle_key(&a, 'q');
     assert(a.quit_requested == 1);
 
+    if (test_verbose()) fprintf(stderr, "    help\n");
     /* F1 / ? shows help */
     app_init(&a, 24, 80);
     app_handle_key(&a, '?');
@@ -71,6 +77,7 @@ void test_app(void) {
     app_handle_key(&a, ' ');
     assert(a.show_help == 0);
 
+    if (test_verbose()) fprintf(stderr, "    f2_new_prompt\n");
     /* F2 / N starts new prompt (when not in Trash) */
     app_init(&a, 24, 80);
     app_handle_key(&a, 'n');
@@ -84,6 +91,7 @@ void test_app(void) {
     app_handle_key(&a, KEY_F(10));
     assert(a.quit_requested == 1);
 
+    if (test_verbose()) fprintf(stderr, "    content_editor\n");
     /* Content editor: F2 in Notes, enter title, Enter advances to content_edit_mode */
     app_init(&a, 24, 80);
     app_handle_key(&a, 'n');
@@ -98,6 +106,7 @@ void test_app(void) {
     assert(a.content_edit_mode == 0);
     assert(a.prompt_mode == 0);
 
+    if (test_verbose()) fprintf(stderr, "    trash_no_new\n");
     /* Trash module: F2/N should not start prompt */
     app_init(&a, 24, 80);
     /* Navigate to Trash module */
@@ -113,6 +122,7 @@ void test_app(void) {
 
 /* Integration test for trash functionality with storage */
 void test_trash_integration(void) {
+    if (test_verbose()) fprintf(stderr, "    trash_integration (create, list, restore, permanent delete, empty)\n");
     char data_dir[256];
 #ifdef PLATFORM_LINUX
     snprintf(data_dir, sizeof(data_dir), "/tmp/vibe_test_trash_XXXXXX");

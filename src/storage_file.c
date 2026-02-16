@@ -26,6 +26,7 @@
 #define DATA_DIR_MAX 256
 #define LINE_MAX 8192
 #define EXT ".bin"
+#define MAX_STRING_LEN (16 * 1024 * 1024)  /* 16MB cap to prevent malicious length overflow */
 
 /* Entity type codes for trash/restore (must match MODULE_* in app.h) */
 #define ENTITY_NOTE     0
@@ -103,8 +104,11 @@ static int read_str(FILE *f, char *buf, int max) {
     uint32_t len;
     if (!read_u32(f, &len)) return 0;
     if (len == 0) { buf[0] = '\0'; return 1; }
-    if ((int)len >= max) {
-        if (fread(buf, 1, max - 1, f) != (size_t)(max - 1)) return 0;
+    /* Cap len to prevent malicious/corrupt length from causing overflow */
+    if (len > MAX_STRING_LEN) len = MAX_STRING_LEN;
+    if (len >= (uint32_t)max) {
+        size_t to_read = (size_t)(max - 1);
+        if (fread(buf, 1, to_read, f) != to_read) return 0;
         buf[max - 1] = '\0';
         if (fseek(f, (long)(len - (max - 1)), SEEK_CUR) != 0) return 0;
     } else {
@@ -116,6 +120,7 @@ static int read_str(FILE *f, char *buf, int max) {
 static int skip_str(FILE *f) {
     uint32_t len;
     if (!read_u32(f, &len)) return 0;
+    if (len > MAX_STRING_LEN) len = MAX_STRING_LEN;  /* Prevent malicious huge seek */
     if (fseek(f, (long)len, SEEK_CUR) != 0) return 0;
     return 1;
 }

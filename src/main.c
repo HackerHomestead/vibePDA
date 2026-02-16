@@ -399,7 +399,7 @@ static void run_interactive_cmd_mode(void) {
                     content_preview[29] = '.';
                     content_preview[30] = '\0';
                 } else {
-                    strcpy(content_preview, n->content);
+                    snprintf(content_preview, sizeof(content_preview), "%.31s", n->content);
                 }
                 printf("%d\t%s\t%s\n", n->id, n->title, content_preview);
             }

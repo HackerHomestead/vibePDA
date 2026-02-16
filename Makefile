@@ -94,10 +94,10 @@ run_tests: config.h
 	$(CC) $(CPPFLAGS) -Itests $(CFLAGS) -o run_tests tests/run_tests.c tests/test_app.c tests/test_storage.c tests/test_fuzz.c tests/test_config.c tests/fixture_parks.c src/app.c src/tui.c src/ui_box.c src/vibe_config.c src/storage_file.c src/storage_io.c $(shell pkg-config --exists ncursesw 2>/dev/null && pkg-config --libs ncursesw || echo "-lncursesw -ltinfo")
 
 test_tui: config.h
-	$(CC) $(CPPFLAGS) -Itests -Isrc $(CFLAGS) -o test_tui tests/test_tui.c src/app.c src/tui.c src/vibe_config.c src/storage_file.c $(shell pkg-config --exists ncursesw 2>/dev/null && pkg-config --libs ncursesw || echo "-lncursesw -ltinfo")
+	$(CC) $(CPPFLAGS) -Itests -Isrc $(CFLAGS) -o test_tui tests/test_tui.c src/app.c src/tui.c src/ui_box.c src/vibe_config.c src/storage_file.c src/storage_io.c $(shell pkg-config --exists ncursesw 2>/dev/null && pkg-config --libs ncursesw || echo "-lncursesw -ltinfo")
 
 demo/demo: config.h
-	$(CC) $(CPPFLAGS) -Itests -Isrc $(CFLAGS) -o demo/demo demo/demo.c tests/fixture_parks.c src/vibe_config.c src/storage_file.c
+	$(CC) $(CPPFLAGS) -Itests -Isrc $(CFLAGS) -o demo/demo demo/demo.c tests/fixture_parks.c src/vibe_config.c src/storage_file.c src/storage_io.c
 
 demo: demo/demo
 	@./demo/demo

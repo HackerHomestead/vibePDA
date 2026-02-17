@@ -2,6 +2,8 @@
 
 Unit and manual testing for the C build. **Status:** Alpha.
 
+**TDD (Test-Driven Development):** See **[docs/TDD.md](TDD.md)** for the Red-Green-Refactor workflow, guidelines, and how to add tests before implementation.
+
 ---
 
 ## Unit tests
@@ -22,6 +24,8 @@ VIBE_TEST_VERBOSE=0 make test
 
 ### What is tested
 
+- **Storage (empty init)** — All entity counts (notes, tasks, contacts, events, facts, finances, documents, trash) are 0 after init in empty dir.
+- **Storage (finances, documents)** — Full CRUD for finances and documents: add, get, update, delete.
 - **App (UI/UX)**  
   - `app_init()` sets initial state (module 0, sidebar focus, no menu, no prompt, no content editor, no search).  
   - `app_handle_key()`: module switch (Up/Down in sidebar), focus (Tab/Shift+Tab), quit (q, F10), help (F1, ?), CRUD hotkeys (F2/N new, F3/E edit, F4/D delete), and search (F5/).  

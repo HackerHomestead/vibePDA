@@ -79,6 +79,12 @@ To add a new entity (e.g. Bookmarks):
 
 ---
 
+## Testing
+
+Unit tests live in `tests/`. Run `make test`. Use a TDD workflow (see **docs/TDD.md**): write a failing test, implement to pass, refactor. Shared helpers and assertion macros in `test_common.h`.
+
+---
+
 ## Build
 
 All sources live in `src/`. The Makefile compiles `src/*.c` (excluding tests). New modules: add to SRC in Makefile.

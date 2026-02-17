@@ -18,6 +18,9 @@ static void test_storage_empty(const char *data_dir) {
     assert(storage_tasks_count() == 0);
     assert(storage_contacts_count() == 0);
     assert(storage_events_count() == 0);
+    assert(storage_facts_count() == 0);
+    assert(storage_finances_count() == 0);
+    assert(storage_documents_count() == 0);
     assert(storage_trash_count() == 0);
 }
 
@@ -297,6 +300,42 @@ void test_storage(void) {
         assert(storage_events_delete(event_id));
         assert(!storage_event_get(event_id, &e));
         assert(storage_events_count() == events - 1);
+    }
+
+    if (test_verbose()) fprintf(stderr, "    finances_crud\n");
+    /* Finances: add, get, update, delete */
+    {
+        int id = storage_finances_add("2026-01-15", "Test expense", 42.99, "Food", "Checking", "");
+        assert(id > 0);
+        VibeFinanceEntry fe;
+        assert(storage_finance_get(id, &fe));
+        assert(fe.id == id);
+        assert(strcmp(fe.date, "2026-01-15") == 0);
+        assert(strcmp(fe.description, "Test expense") == 0);
+        assert(fe.amount > 42.0 && fe.amount < 43.0);
+        assert(storage_finances_update(id, "2026-01-16", "Updated expense", 99.00, "Travel", "Savings", ""));
+        assert(storage_finance_get(id, &fe));
+        assert(strcmp(fe.description, "Updated expense") == 0);
+        assert(storage_finances_delete(id));
+        assert(!storage_finance_get(id, &fe));
+    }
+
+    if (test_verbose()) fprintf(stderr, "    documents_crud\n");
+    /* Documents: add, get, update, delete */
+    {
+        int id = storage_documents_add("Test Doc", "invoice", "Content here");
+        assert(id > 0);
+        VibeDocument d;
+        assert(storage_document_get(id, &d));
+        assert(d.id == id);
+        assert(strcmp(d.title, "Test Doc") == 0);
+        assert(strcmp(d.template_name, "invoice") == 0);
+        assert(strcmp(d.content, "Content here") == 0);
+        assert(storage_documents_update(id, "Updated Doc", "report", "New content"));
+        assert(storage_document_get(id, &d));
+        assert(strcmp(d.title, "Updated Doc") == 0);
+        assert(storage_documents_delete(id));
+        assert(!storage_document_get(id, &d));
     }
 
     if (test_verbose()) fprintf(stderr, "    trash_list_restore_permanent\n");

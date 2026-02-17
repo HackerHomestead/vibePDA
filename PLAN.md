@@ -141,6 +141,14 @@ Autotools: `autoreconf -fi && ./configure && make && make install`. CLI: `--help
 
 ---
 
+## Testing and TDD
+
+- **Unit tests**: `make test` runs app, storage, trash integration, config, fuzz/sanity, and CLI tests. See **docs/TESTING.md**.
+- **TDD**: Red-Green-Refactor workflow documented in **docs/TDD.md**. Write tests first, then implement; use `TEST_EQ`, `TEST_STR_EQ`, `TEST_TRUE` from `test_common.h` for clearer failures.
+- **Screenshots**: `scripts/gen_screenshots.py` generates PNGs and GIF for docs; color palette matches the live TUI.
+
+---
+
 ## References
 
 - VT102 minimum; modern Linux terminal (ECMA-48, SGR, etc.)  

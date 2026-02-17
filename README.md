@@ -164,6 +164,7 @@ make install
 - **CHANGELOG.md**: Version history and changes
 - **PLAN.md**: Technical architecture and design notes
 - **docs/TESTING.md**: Testing documentation
+- **docs/TDD.md**: Test-Driven Development (TDD) approach and workflow
 - **docs/CODE_REVIEW.md**: Senior developer code review and recommendations
 - **docs/INFOSEC_REVIEW.md**: Security review and fixes (length cap, strcpy→snprintf)
 - **assets/**: Project icon (`icon.svg`, `icon.png`). Regenerate PNG: `convert -background none -density 256 assets/icon.svg -resize 256x256 assets/icon.png`
@@ -177,7 +178,7 @@ make test
 make && ./run_tests
 ```
 
-Runs unit tests for app (UI state / key handling), storage (backend), trash integration, migration, corruption, fuzz/sanity, and security regression tests. See `docs/TESTING.md`.
+Runs unit tests for app (UI state / key handling), storage (backend, including finances/documents CRUD), trash integration, migration, corruption, fuzz/sanity, and security regression tests. See `docs/TESTING.md` and **`docs/TDD.md`** for the Test-Driven Development workflow.
 
 ---
 
@@ -201,18 +202,21 @@ vibe/
 ├── src/
 │   ├── main.c              # Entry point; CLI args; TUI loop
 │   ├── app.c, app.h        # App shell: state, F-keys, note cards, content editor
-│   ├── tui.c, tui.h        # Terminal I/O via curses (ncurses/PDCurses)
+│   ├── tui.c, tui.h        # Terminal I/O, curses, color scheme
+│   ├── ui_box.c, ui_box.h  # Box-drawing (Unicode/ASCII)
 │   ├── vibe_config.c, vibe_config.h  # Config layer (paths, defaults)
-│   ├── types.h             # Data types (Note, Task, Contact, Event)
+│   ├── types.h             # Data types (Note, Task, Contact, Event, etc.)
 │   ├── storage.h           # Storage API
+│   ├── storage_io.c, storage_io.h  # Binary I/O helpers
 │   └── storage_file.c      # File-based backend (all platforms)
-├── tests/              # Unit tests (app, storage, fuzz, migration, corruption)
+├── tests/              # Unit tests; see docs/TDD.md for TDD workflow
 ├── assets/             # icon.svg, icon.png (project icon)
 ├── scripts/            # gen_screenshots.py (PNG + GIF for docs)
 ├── README.md, CHANGELOG.md, PLAN.md, VERSION
 └── docs/
     ├── CODE_REVIEW.md   # Code review and recommendations
     ├── INFOSEC_REVIEW.md # Security review and fixes
+    ├── TDD.md          # Test-Driven Development workflow
     ├── TESTING.md
     ├── USER_MANUAL.md
     └── images/          # Screenshots (gen_screenshots.py)

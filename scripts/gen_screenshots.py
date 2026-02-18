@@ -128,7 +128,10 @@ def render_notes_view(module_idx=0, ascii_box=False):
         # Box-drawing card: ┌───┐ / +---+ (Unicode vs ASCII fallback)
         draw.rectangle([(card_x, card_top), (card_x + card_w, card_top + 5 * CELL_H)],
                        outline=FG, fill=(25, 25, 25))
-        draw.text((card_x + 8, card_top + 4), " Title: Grocery list", font=font_bold, fill=CARD_TITLE)
+        label = " Title: "
+        draw.text((card_x + 8, card_top + 4), label, font=font_bold, fill=CARD_TITLE)
+        # Approx 8px per char (14pt mono); label is 8 chars
+        draw.text((card_x + 8 + 8 * len(label), card_top + 4), "Grocery list", font=font, fill=FG)
         draw.text((card_x + 8, card_top + CELL_H + 4), "Milk, eggs, bread, coffee", font=font, fill=FG)
         draw.text((card_x + 8, card_top + 4 * CELL_H + 4), " Note 1 of 3 (Up/Down) ", font=font, fill=STATUS_FG)
 
@@ -216,13 +219,16 @@ def render_help_view():
         "",
         "NAVIGATION",
         "  Up/Down, j/k   Move selection",
+        "  Left/Right     Move in grid (Contacts)",
         "  Tab            Switch between sidebar and list",
         "  Enter          Edit selected item",
         "",
         "ACTIONS",
         "  F2 or N        New item",
         "  F3 or E        Edit selected",
+        "  F4 or D        Delete selected",
         "  F5 or /        Search/Filter items",
+        "  F1 or ?        This help",
         "  F10 or q       Quit",
         "",
         "Press any key to close",
@@ -272,10 +278,10 @@ def render_search_view():
         else:
             draw.text((PADDING + BORDER, y), text, font=font, fill=FG)
 
-    # Search prompt in status bar
+    # Search prompt in status bar (match app: same style as status bar)
     status_y = (ROWS - 1) * CELL_H + PADDING
-    draw.rectangle([(0, status_y), (img.width, img.height)], fill=(60, 40, 0))
-    draw.text((PADDING + BORDER, status_y), " Search: grocery_ ", font=font, fill=(255, 255, 200))
+    draw.rectangle([(0, status_y), (img.width, img.height)], fill=STATUS_BG)
+    draw.text((PADDING + BORDER, status_y), " Search: grocery_ ", font=font, fill=STATUS_FG)
 
     # Filtered result (Notes with filter applied)
     draw.text((MAIN_X, content_top + CELL_H), "Notes (1 item) [Filter: grocery]", font=font_bold, fill=FG)
